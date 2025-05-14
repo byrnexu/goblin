@@ -33,8 +33,8 @@ class BinanceMarketData(MarketDataBase):
         self._message_handler_task: Optional[asyncio.Task] = None
         # HTTP会话，用于REST API请求
         self._session: Optional[aiohttp.ClientSession] = None
-        # 缓存原始数据
-        self._raw_data_cache: Dict[str, List[dict]] = {}
+        # 缓存订单簿更新数据
+        self._orderbook_update_cache: Dict[str, List[dict]] = {}
 
     async def connect(self) -> None:
         """连接到币安WebSocket服务器
@@ -135,10 +135,10 @@ class BinanceMarketData(MarketDataBase):
         symbol = data['s']
         timestamp = data['E']
 
-        # 缓存原始数据
-        if symbol not in self._raw_data_cache:
-            self._raw_data_cache[symbol] = []
-        self._raw_data_cache[symbol].append(data)
+        # 缓存订单簿更新数据
+        if symbol not in self._orderbook_update_cache:
+            self._orderbook_update_cache[symbol] = []
+        self._orderbook_update_cache[symbol].append(data)
 
         # 获取或创建订单簿
         if symbol not in self._orderbooks:
@@ -224,10 +224,10 @@ class BinanceMarketData(MarketDataBase):
                 continue
 
             snapshot_last_update_id = self._orderbooks[symbol].aux_data['lastUpdateId']
-            cached_messages_for_symbol = self._raw_data_cache.get(symbol, [])
+            cached_messages_for_symbol = self._orderbook_update_cache.get(symbol, [])
 
             if not cached_messages_for_symbol:
-                print(f"{symbol} 的原始数据缓存为空，等待缓存消息以便同步快照... 1秒后重试...")
+                print(f"{symbol} 的订单簿更新数据缓存为空，等待缓存消息以便同步快照... 1秒后重试...")
                 # 如果当前消息就是第一个，它已经被加入了缓存，所以理论上这里不应常发生
                 await asyncio.sleep(1)
                 continue
