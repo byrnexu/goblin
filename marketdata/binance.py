@@ -154,10 +154,12 @@ class BinanceMarketData(MarketDataBase):
             self._orderbook_update_cache[symbol] = []  # 清空该交易对的增量订单簿缓存(都太旧了)
             return
         else:
-            print(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={snapshot_last_update_id})。合并 {symbol} 的增量订单簿。{len(self._orderbook_update_cache[symbol])}")
+            print(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={snapshot_last_update_id})。合并 {symbol} 的增量订单簿。orderbook_update_cache size {len(self._orderbook_update_cache[symbol])}")
 
         # 将增量更新合并到快照中
-        self._merge_orderbook_update_to_snapshot(symbol, data)
+        for orderbook_update in self._orderbook_update_cache[symbol]:
+            self._merge_orderbook_update_to_snapshot(symbol, orderbook_update)
+        self._orderbook_update_cache[symbol] = []
 
         # 通知订单簿已更新
         await self._notify_orderbook(self._orderbooks[symbol])
