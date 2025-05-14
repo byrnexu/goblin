@@ -5,6 +5,7 @@ from decimal import Decimal
 import websockets
 import aiohttp
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
+from .config import BinanceConfig
 
 class BinanceMarketData(MarketDataBase):
     """币安交易所市场数据实现
@@ -17,22 +18,27 @@ class BinanceMarketData(MarketDataBase):
     4. 订单簿快照获取
     """
 
-    def __init__(self):
+    def __init__(self, config: BinanceConfig = BinanceConfig()):
         super().__init__()
-        # WebSocket API地址
-        self._ws_url = "wss://stream.binance.com:9443/ws"
-        # REST API地址
-        self._rest_url = "https://api.binance.com/api/v3"
+
+        self._config = config
+        self._ws_url = config.WS_URL
+        self._rest_url = config.REST_URL
+        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT
+        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL
+
         # WebSocket连接对象
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
-        # 存储每个交易对的订单簿数据
-        self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
+        # HTTP会话，用于REST API请求
+        self._session: Optional[aiohttp.ClientSession] = None
+
         # 控制消息处理循环的运行状态
         self._running = False
         # 消息处理任务
         self._message_handler_task: Optional[asyncio.Task] = None
-        # HTTP会话，用于REST API请求
-        self._session: Optional[aiohttp.ClientSession] = None
+
+        # 存储每个交易对的订单簿数据
+        self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
 
     async def connect(self) -> None:
         """连接到币安WebSocket服务器
@@ -41,9 +47,10 @@ class BinanceMarketData(MarketDataBase):
         同时创建HTTP会话用于REST API请求
         """
         self._ws = await websockets.connect(self._ws_url)
+        self._session = aiohttp.ClientSession()
+
         self._running = True
         self._message_handler_task = asyncio.create_task(self._handle_messages())
-        self._session = aiohttp.ClientSession()
 
     async def disconnect(self) -> None:
         """断开与币安WebSocket服务器的连接
@@ -175,7 +182,6 @@ class BinanceMarketData(MarketDataBase):
     def _u_is_less_than_last_update_id(self, symbol: str, data: dict) -> bool:
         """Checks if the 'u' of data is less than the snapshot's 'lastUpdateId'."""
 
-        symbol = data['s']
         orderbook_snapshot = self._orderbook_snapshot_cache.get(symbol)
         if not orderbook_snapshot:
             print(f"警告: 没有找到{symbol}的订单簿快照用于比较lastUpdateId和增量订单簿中的'u'") # Optional log
@@ -241,7 +247,7 @@ class BinanceMarketData(MarketDataBase):
             url = f"{self._rest_url}/depth"
             params = {
                 "symbol": symbol,
-                "limit": 100  # 获取100档深度
+                "limit": self._orderbook_depth_limit
             }
 
             async with self._session.get(url, params=params) as response:
@@ -293,10 +299,9 @@ class BinanceMarketData(MarketDataBase):
         """
         super().subscribe_orderbook(symbol, callback)
         if self._ws:
-            # 发送订阅消息
             subscribe_msg = {
                 "method": "SUBSCRIBE",
-                "params": [f"{symbol.lower()}@depth"],
+                "params": [f"{symbol.lower()}@depth@{self._orderbook_update_interval}"],
                 "id": 1
             }
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
