@@ -133,7 +133,6 @@ class BinanceMarketData(MarketDataBase):
             data: 订单簿更新数据，包含买单和卖单的更新信息
         """
         symbol = data['s']
-        timestamp = data['E']
 
         # 缓存订单簿更新数据
         if symbol not in self._orderbook_update_cache:
@@ -142,12 +141,18 @@ class BinanceMarketData(MarketDataBase):
 
         # 获取或创建订单簿
         if symbol not in self._orderbooks:
-            # 首次订阅时，需要获取完整的订单簿快照并与缓存同步
+            # 反复获取订单簿快照，直到其lastUpdateId大于缓存中增量订单簿的U值
             if not await self._ensure_last_update_id_is_greater_than_U(symbol):
                 print(f"为 {symbol} 同步初始订单簿快照失败或操作被中断，放弃处理当前消息。")
                 return # 如果同步失败或被中断，则不处理当前消息
-            # 如果同步成功，self._orderbooks[symbol] 已被填充
-            # 并且我们将继续使用这个orderbook处理当前消息data，因此移除此处的return
+
+        # 如果增量订单簿中最新的记录的u值小于快照中的lastUpdateId，说明增量订单簿太旧，需要继续获取更新的
+        if self._u_is_less_than_last_update_id(symbol):
+            u_in_last_orderbook_update = self._orderbook_update_cache[symbol][-1]['u']
+            snapshot_last_update_id = self._orderbooks[symbol].aux_data['lastUpdateId']
+            print(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={snapshot_last_update_id})。清空 {symbol} 的增量订单簿并跳过当前消息。")
+            self._orderbook_update_cache[symbol] = []  # 清空该交易对的增量订单簿缓存(都太旧了)
+            return
 
         orderbook = self._orderbooks[symbol]
 
@@ -189,7 +194,7 @@ class BinanceMarketData(MarketDataBase):
                     orderbook.asks.append(OrderBookLevel(price, quantity))
                     orderbook.asks.sort(key=lambda x: x.price)
 
-        orderbook.timestamp = timestamp
+        orderbook.timestamp = data['E']
         await self._notify_orderbook(orderbook)
 
     async def _handle_trade(self, data: dict) -> None:
@@ -209,6 +214,34 @@ class BinanceMarketData(MarketDataBase):
             trade_id=str(data['t'])
         )
         await self._notify_trade(trade)
+
+    def _u_is_less_than_last_update_id(self, symbol: str) -> bool:
+        """Checks if the 'u' of the last cached update is less than the snapshot's 'lastUpdateId'."""
+        orderbook_updates_for_symbol = self._orderbook_update_cache.get(symbol)
+
+        if not orderbook_updates_for_symbol:
+            return False  # No cached updates, so condition cannot be met
+
+        last_orderbook_update = orderbook_updates_for_symbol[-1]
+        current_orderbook = self._orderbooks.get(symbol)
+
+        # Ensure all required keys/data points exist before comparison
+        if 'u' not in last_orderbook_update:
+            # print(f"Warning: Key 'u' missing in last cached update for {symbol}") # Optional log
+            return False
+
+        if not current_orderbook:
+            # print(f"Warning: No current orderbook for {symbol} for snapshot_last_update_id check") # Optional log
+            return False
+
+        if 'lastUpdateId' not in current_orderbook.aux_data:
+            # print(f"Warning: Key 'lastUpdateId' missing in orderbook aux_data for {symbol}") # Optional log
+            return False
+
+        u_in_last_orderbook_update = last_orderbook_update['u']
+        snapshot_last_update_id = current_orderbook.aux_data['lastUpdateId']
+
+        return u_in_last_orderbook_update < snapshot_last_update_id
 
     async def _ensure_last_update_id_is_greater_than_U(self, symbol: str) -> bool:
         """反复获取订单簿快照，直到其lastUpdateId大于缓存中增量订单簿的U值"""
@@ -237,13 +270,13 @@ class BinanceMarketData(MarketDataBase):
                 if 'U' not in orderbook_update: # 'U' 是事件中的第一个更新ID
                     # print(f"警告: 缓存的订单簿消息 {orderbook_update.get('e')} for {symbol} 缺少 'U' 字段。")
                     continue
-                
+
                 # 条件：快照的lastUpdateId > 缓存消息的U (First update ID in event)
                 if snapshot_last_update_id > orderbook_update['U']:
                     print(f"快照同步条件满足 for {symbol}: snapshot_lastUpdateId ({snapshot_last_update_id}) > orderbook_update['U'] ({orderbook_update['U']})")
                     found_suitable_orderbook_update = True
                     break
-            
+
             if found_suitable_orderbook_update:
                 print(f"成功获取并同步了 {symbol} 的订单簿快照。")
                 return True  # 同步成功
@@ -252,7 +285,7 @@ class BinanceMarketData(MarketDataBase):
                 print(f"快照 for {symbol} (lastUpdateId: {snapshot_last_update_id}) "
                       f"未满足条件 (未大于任何缓存消息的 'U' 值: {u_values})。1秒后重试获取快照...")
                 await asyncio.sleep(1)
-        
+
         print(f"为 {symbol} 同步订单簿快照的操作因服务停止而被中断。")
         return False # 仅当 self._running 为 False 时到达此处
 
