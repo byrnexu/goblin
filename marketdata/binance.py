@@ -142,9 +142,12 @@ class BinanceMarketData(MarketDataBase):
 
         # 获取或创建订单簿
         if symbol not in self._orderbooks:
-            # 首次订阅时，需要获取完整的订单簿快照
-            await self._get_orderbook_snapshot(symbol)
-            return
+            # 首次订阅时，需要获取完整的订单簿快照并与缓存同步
+            if not await self._sync_orderbook_snapshot_with_cache(symbol):
+                print(f"为 {symbol} 同步初始订单簿快照失败或操作被中断，放弃处理当前消息。")
+                return # 如果同步失败或被中断，则不处理当前消息
+            # 如果同步成功，self._orderbooks[symbol] 已被填充
+            # 并且我们将继续使用这个orderbook处理当前消息data，因此移除此处的return
 
         orderbook = self._orderbooks[symbol]
 
@@ -206,6 +209,53 @@ class BinanceMarketData(MarketDataBase):
             trade_id=str(data['t'])
         )
         await self._notify_trade(trade)
+
+    async def _sync_orderbook_snapshot_with_cache(self, symbol: str) -> bool:
+        """反复获取订单簿快照，直到其lastUpdateId大于缓存中增量订单簿的U值"""
+        print(f"正在为 {symbol} 同步订单簿快照与缓存消息...")
+        while self._running:  # 确保在断开连接时停止
+            await self._get_orderbook_snapshot(symbol)
+
+            if symbol not in self._orderbooks or \
+               not self._orderbooks.get(symbol) or \
+               'lastUpdateId' not in self._orderbooks[symbol].aux_data:
+                print(f"获取 {symbol} 的订单簿快照失败或快照无效，1秒后重试...")
+                await asyncio.sleep(1)
+                continue
+
+            snapshot_last_update_id = self._orderbooks[symbol].aux_data['lastUpdateId']
+            cached_messages_for_symbol = self._raw_data_cache.get(symbol, [])
+
+            if not cached_messages_for_symbol:
+                print(f"{symbol} 的原始数据缓存为空，等待缓存消息以便同步快照... 1秒后重试...")
+                # 如果当前消息就是第一个，它已经被加入了缓存，所以理论上这里不应常发生
+                await asyncio.sleep(1)
+                continue
+
+            found_suitable_cached_message = False
+            for cached_msg in cached_messages_for_symbol:
+                if 'U' not in cached_msg: # 'U' 是事件中的第一个更新ID
+                    # 可以选择打印警告，但为简洁起见暂时省略
+                    # print(f"警告: 缓存的订单簿消息 {cached_msg.get('e')} for {symbol} 缺少 'U' 字段。")
+                    continue
+
+                # 条件：快照的lastUpdateId > 缓存消息的U (First update ID in event)
+                if snapshot_last_update_id > cached_msg['U']:
+                    print(f"快照同步条件满足 for {symbol}: snapshot_lastUpdateId ({snapshot_last_update_id}) > cached_msg['U'] ({cached_msg['U']})")
+                    found_suitable_cached_message = True
+                    break
+
+            if found_suitable_cached_message:
+                print(f"成功获取并同步了 {symbol} 的订单簿快照。")
+                return True  # 同步成功
+            else:
+                u_values = [msg.get('U') for msg in cached_messages_for_symbol if 'U' in msg]
+                print(f"快照 for {symbol} (lastUpdateId: {snapshot_last_update_id}) "
+                      f"未满足条件 (未大于任何缓存消息的 'U' 值: {u_values})。1秒后重试获取快照...")
+                await asyncio.sleep(1)
+
+        print(f"为 {symbol} 同步订单簿快照的操作因服务停止而被中断。")
+        return False # 仅当 self._running 为 False 时到达此处
 
     async def _get_orderbook_snapshot(self, symbol: str) -> None:
         """获取订单簿快照
