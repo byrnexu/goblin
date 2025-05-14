@@ -147,55 +147,20 @@ class BinanceMarketData(MarketDataBase):
                 return # 如果同步失败或被中断，则不处理当前消息
 
         # 如果增量订单簿中最新的记录的u值小于快照中的lastUpdateId，说明增量订单簿太旧，需要继续获取更新的
+        u_in_last_orderbook_update = self._orderbook_update_cache[symbol][-1]['u']
+        snapshot_last_update_id = self._orderbooks[symbol].aux_data['lastUpdateId']
         if self._u_is_less_than_last_update_id(symbol):
-            u_in_last_orderbook_update = self._orderbook_update_cache[symbol][-1]['u']
-            snapshot_last_update_id = self._orderbooks[symbol].aux_data['lastUpdateId']
             print(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={snapshot_last_update_id})。清空 {symbol} 的增量订单簿并跳过当前消息。")
             self._orderbook_update_cache[symbol] = []  # 清空该交易对的增量订单簿缓存(都太旧了)
             return
+        else:
+            print(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={snapshot_last_update_id})。合并 {symbol} 的增量订单簿。{len(self._orderbook_update_cache[symbol])}")
 
-        orderbook = self._orderbooks[symbol]
+        # 将增量更新合并到快照中
+        self._merge_orderbook_update_to_snapshot(symbol, data)
 
-        # 更新买单
-        for bid in data['b']:
-            price = Decimal(bid[0])
-            quantity = Decimal(bid[1])
-            if quantity == 0:
-                # 删除价格为price的买单
-                orderbook.bids = [level for level in orderbook.bids if level.price != price]
-            else:
-                # 更新或添加买单
-                found = False
-                for level in orderbook.bids:
-                    if level.price == price:
-                        level.quantity = quantity
-                        found = True
-                        break
-                if not found:
-                    orderbook.bids.append(OrderBookLevel(price, quantity))
-                    orderbook.bids.sort(key=lambda x: x.price, reverse=True)
-
-        # 更新卖单
-        for ask in data['a']:
-            price = Decimal(ask[0])
-            quantity = Decimal(ask[1])
-            if quantity == 0:
-                # 删除价格为price的卖单
-                orderbook.asks = [level for level in orderbook.asks if level.price != price]
-            else:
-                # 更新或添加卖单
-                found = False
-                for level in orderbook.asks:
-                    if level.price == price:
-                        level.quantity = quantity
-                        found = True
-                        break
-                if not found:
-                    orderbook.asks.append(OrderBookLevel(price, quantity))
-                    orderbook.asks.sort(key=lambda x: x.price)
-
-        orderbook.timestamp = data['E']
-        await self._notify_orderbook(orderbook)
+        # 通知订单簿已更新
+        await self._notify_orderbook(self._orderbooks[symbol])
 
     async def _handle_trade(self, data: dict) -> None:
         """处理成交消息
@@ -385,3 +350,47 @@ class BinanceMarketData(MarketDataBase):
                 "id": 1
             }
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
+
+    def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
+        """将增量订单簿更新合并到现有的快照中。"""
+        orderbook = self._orderbooks[symbol]
+
+        # 更新买单
+        for bid in data['b']:
+            price = Decimal(bid[0])
+            quantity = Decimal(bid[1])
+            if quantity == 0:
+                # 删除价格为price的买单
+                orderbook.bids = [level for level in orderbook.bids if level.price != price]
+            else:
+                # 更新或添加买单
+                found = False
+                for level in orderbook.bids:
+                    if level.price == price:
+                        level.quantity = quantity
+                        found = True
+                        break
+                if not found:
+                    orderbook.bids.append(OrderBookLevel(price, quantity))
+                    orderbook.bids.sort(key=lambda x: x.price, reverse=True)
+
+        # 更新卖单
+        for ask in data['a']:
+            price = Decimal(ask[0])
+            quantity = Decimal(ask[1])
+            if quantity == 0:
+                # 删除价格为price的卖单
+                orderbook.asks = [level for level in orderbook.asks if level.price != price]
+            else:
+                # 更新或添加卖单
+                found = False
+                for level in orderbook.asks:
+                    if level.price == price:
+                        level.quantity = quantity
+                        found = True
+                        break
+                if not found:
+                    orderbook.asks.append(OrderBookLevel(price, quantity))
+                    orderbook.asks.sort(key=lambda x: x.price)
+
+        orderbook.timestamp = data['E']
