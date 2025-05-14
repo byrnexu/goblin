@@ -40,6 +40,9 @@ class BinanceMarketData(MarketDataBase):
         # 存储每个交易对的订单簿数据
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
 
+        # 用于WebSocket请求的唯一ID
+        self._next_request_id = 1
+
     async def connect(self) -> None:
         """连接到币安WebSocket服务器
 
@@ -302,8 +305,9 @@ class BinanceMarketData(MarketDataBase):
             subscribe_msg = {
                 "method": "SUBSCRIBE",
                 "params": [f"{symbol.lower()}@depth@{self._orderbook_update_interval}"],
-                "id": 1
+                "id": self._next_request_id
             }
+            self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
@@ -319,12 +323,12 @@ class BinanceMarketData(MarketDataBase):
         """
         super().subscribe_trades(symbol, callback)
         if self._ws:
-            # 发送订阅消息
             subscribe_msg = {
                 "method": "SUBSCRIBE",
                 "params": [f"{symbol.lower()}@trade"],
-                "id": 1
+                "id": self._next_request_id
             }
+            self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
