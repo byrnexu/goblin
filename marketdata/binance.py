@@ -8,7 +8,7 @@ from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
 
 class BinanceMarketData(MarketDataBase):
     """币安交易所市场数据实现
-    
+
     实现了币安交易所的WebSocket API，提供实时市场数据订阅功能。
     包括：
     1. 订单簿数据订阅和更新
@@ -16,7 +16,7 @@ class BinanceMarketData(MarketDataBase):
     3. 自动重连机制
     4. 订单簿快照获取
     """
-    
+
     def __init__(self):
         super().__init__()
         # WebSocket API地址
@@ -33,10 +33,12 @@ class BinanceMarketData(MarketDataBase):
         self._message_handler_task: Optional[asyncio.Task] = None
         # HTTP会话，用于REST API请求
         self._session: Optional[aiohttp.ClientSession] = None
-    
+        # 缓存原始数据
+        self._raw_data_cache: Dict[str, List[dict]] = {}
+
     async def connect(self) -> None:
         """连接到币安WebSocket服务器
-        
+
         建立WebSocket连接并启动消息处理循环
         同时创建HTTP会话用于REST API请求
         """
@@ -44,17 +46,17 @@ class BinanceMarketData(MarketDataBase):
         self._running = True
         self._message_handler_task = asyncio.create_task(self._handle_messages())
         self._session = aiohttp.ClientSession()
-    
+
     async def disconnect(self) -> None:
         """断开与币安WebSocket服务器的连接
-        
+
         1. 停止消息处理循环
         2. 取消消息处理任务
         3. 关闭WebSocket连接
         4. 关闭HTTP会话
         """
         self._running = False
-        
+
         # 取消消息处理任务
         if self._message_handler_task:
             self._message_handler_task.cancel()
@@ -63,7 +65,7 @@ class BinanceMarketData(MarketDataBase):
             except asyncio.CancelledError:
                 pass
             self._message_handler_task = None
-        
+
         # 关闭WebSocket连接
         if self._ws:
             try:
@@ -75,15 +77,15 @@ class BinanceMarketData(MarketDataBase):
                 self._ws.fail_connection()
             finally:
                 self._ws = None
-        
+
         # 关闭HTTP会话
         if self._session:
             await self._session.close()
             self._session = None
-    
+
     async def _handle_messages(self) -> None:
         """处理WebSocket消息
-        
+
         持续接收并处理WebSocket消息，包括：
         1. 订单簿更新消息
         2. 成交消息
@@ -92,12 +94,12 @@ class BinanceMarketData(MarketDataBase):
         """
         if not self._ws:
             return
-        
+
         while self._running:
             try:
                 message = await self._ws.recv()
                 data = json.loads(message)
-                
+
                 # 处理订单簿数据
                 if 'e' in data and data['e'] == 'depthUpdate':
                     await self._handle_orderbook_update(data)
@@ -117,30 +119,35 @@ class BinanceMarketData(MarketDataBase):
                     print(f"处理消息时出错: {e}")
                     await asyncio.sleep(1)
                     await self.connect()
-    
+
     async def _handle_orderbook_update(self, data: dict) -> None:
         """处理订单簿更新消息
-        
+
         处理币安WebSocket的订单簿更新消息，包括：
         1. 更新买单
         2. 更新卖单
         3. 维护订单簿状态
         4. 通知订阅者
-        
+
         Args:
             data: 订单簿更新数据，包含买单和卖单的更新信息
         """
         symbol = data['s']
         timestamp = data['E']
-        
+
+        # 缓存原始数据
+        if symbol not in self._raw_data_cache:
+            self._raw_data_cache[symbol] = []
+        self._raw_data_cache[symbol].append(data)
+
         # 获取或创建订单簿
         if symbol not in self._orderbooks:
             # 首次订阅时，需要获取完整的订单簿快照
             await self._get_orderbook_snapshot(symbol)
             return
-        
+
         orderbook = self._orderbooks[symbol]
-        
+
         # 更新买单
         for bid in data['b']:
             price = Decimal(bid[0])
@@ -159,7 +166,7 @@ class BinanceMarketData(MarketDataBase):
                 if not found:
                     orderbook.bids.append(OrderBookLevel(price, quantity))
                     orderbook.bids.sort(key=lambda x: x.price, reverse=True)
-        
+
         # 更新卖单
         for ask in data['a']:
             price = Decimal(ask[0])
@@ -178,15 +185,15 @@ class BinanceMarketData(MarketDataBase):
                 if not found:
                     orderbook.asks.append(OrderBookLevel(price, quantity))
                     orderbook.asks.sort(key=lambda x: x.price)
-        
+
         orderbook.timestamp = timestamp
         await self._notify_orderbook(orderbook)
-    
+
     async def _handle_trade(self, data: dict) -> None:
         """处理成交消息
-        
+
         处理币安WebSocket的成交消息，转换为内部Trade对象并通知订阅者
-        
+
         Args:
             data: 成交数据，包含价格、数量、方向等信息
         """
@@ -199,18 +206,18 @@ class BinanceMarketData(MarketDataBase):
             trade_id=str(data['t'])
         )
         await self._notify_trade(trade)
-    
+
     async def _get_orderbook_snapshot(self, symbol: str) -> None:
         """获取订单簿快照
-        
+
         通过REST API获取完整的订单簿数据，用于初始化订单簿状态
-        
+
         Args:
             symbol: 交易对符号
         """
         if not self._session:
             return
-        
+
         try:
             # 获取订单簿快照
             url = f"{self._rest_url}/depth"
@@ -218,11 +225,11 @@ class BinanceMarketData(MarketDataBase):
                 "symbol": symbol,
                 "limit": 100  # 获取100档深度
             }
-            
+
             async with self._session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
+
                     # 创建订单簿对象
                     orderbook = OrderBook(
                         symbol=symbol,
@@ -240,27 +247,28 @@ class BinanceMarketData(MarketDataBase):
                             )
                             for ask in data["asks"]
                         ],
-                        timestamp=data["lastUpdateId"]
+                        timestamp=0,
+                        aux_data={'lastUpdateId': data['lastUpdateId']} # 将lastUpdateId存入aux_data
                     )
-                    
+
                     # 保存订单簿
                     self._orderbooks[symbol] = orderbook
-                    
+
                     # 通知更新
                     await self._notify_orderbook(orderbook)
                 else:
                     print(f"获取订单簿快照失败: {response.status}")
         except Exception as e:
             print(f"获取订单簿快照时出错: {e}")
-    
+
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
         """订阅订单簿数据
-        
+
         订阅指定交易对的订单簿数据，包括：
         1. 注册回调函数
         2. 发送WebSocket订阅消息
         3. 获取初始订单簿快照
-        
+
         Args:
             symbol: 交易对符号，例如 'BTCUSDT'
             callback: 订单簿数据回调函数
@@ -274,14 +282,14 @@ class BinanceMarketData(MarketDataBase):
                 "id": 1
             }
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
-    
+
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """订阅逐笔成交数据
-        
+
         订阅指定交易对的成交数据，包括：
         1. 注册回调函数
         2. 发送WebSocket订阅消息
-        
+
         Args:
             symbol: 交易对符号，例如 'BTCUSDT'
             callback: 成交数据回调函数
@@ -294,4 +302,4 @@ class BinanceMarketData(MarketDataBase):
                 "params": [f"{symbol.lower()}@trade"],
                 "id": 1
             }
-            asyncio.create_task(self._ws.send(json.dumps(subscribe_msg))) 
+            asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))

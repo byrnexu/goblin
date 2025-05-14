@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Union, Awaitable
-from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Union, Awaitable, Any
+from dataclasses import dataclass, field
 from decimal import Decimal
 import asyncio
 
@@ -23,6 +23,7 @@ class OrderBook:
     bids: List[OrderBookLevel]  # 买单列表，按价格降序排列（最高价在前）
     asks: List[OrderBookLevel]  # 卖单列表，按价格升序排列（最低价在前）
     timestamp: int  # 毫秒时间戳，表示订单簿更新的时间
+    aux_data: Dict[str, Any] = field(default_factory=dict)  # 通用辅助数据字段
 
 @dataclass
 class Trade:
