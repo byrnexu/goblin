@@ -35,11 +35,11 @@ async def trade_callback(trade: Trade) -> None:
     Args:
         trade: 新的成交数据
     """
-    # print(f"\n成交 - {trade.symbol}")
-    # print(f"价格: {trade.price:>10.2f}")
-    # print(f"数量: {trade.quantity:>10.4f}")
-    # print(f"方向: {'买入' if trade.side == 'buy' else '卖出'}")
-    # print(f"成交ID: {trade.trade_id}")
+    print(f"\n成交 - {trade.symbol}")
+    print(f"价格: {trade.price:>10.2f}")
+    print(f"数量: {trade.quantity:>10.4f}")
+    print(f"方向: {'买入' if trade.side == 'buy' else '卖出'}")
+    print(f"成交ID: {trade.trade_id}")
 
 async def main():
     """主函数
@@ -51,23 +51,23 @@ async def main():
     4. 处理程序退出
     """
     # 创建币安现货市场数据实例
-    market_data = BinanceSpotMarketData()
-    await market_data.connect()
-    market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
-    market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
-    market_data.subscribe_trades("BTC/USDT", trade_callback)
+    binance_spot_market_data = BinanceSpotMarketData()
+    await binance_spot_market_data.connect()
+    binance_spot_market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
+    binance_spot_market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
+    binance_spot_market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建币安USDT本位永续合约市场数据实例
-    perp_usdt = BinancePerpMarketData(contract_type='usdt')
-    await perp_usdt.connect()
-    perp_usdt.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
-    perp_usdt.subscribe_trades("BTC-USDT-PERP", trade_callback)
+    binance_perp_usdt_market_data = BinancePerpMarketData(contract_type='usdt')
+    await binance_perp_usdt_market_data.connect()
+    binance_perp_usdt_market_data.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
+    binance_perp_usdt_market_data.subscribe_trades("BTC-USDT-PERP", trade_callback)
 
     # 创建币安币本位永续合约市场数据实例
-    perp_coin = BinancePerpMarketData(contract_type='coin')
-    await perp_coin.connect()
-    perp_coin.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
-    perp_coin.subscribe_trades("BTC-USD-PERP", trade_callback)
+    binance_perp_coin_market_data = BinancePerpMarketData(contract_type='coin')
+    await binance_perp_coin_market_data.connect()
+    binance_perp_coin_market_data.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
+    binance_perp_coin_market_data.subscribe_trades("BTC-USD-PERP", trade_callback)
 
     # 创建事件来通知程序退出
     stop_event = asyncio.Event()
@@ -90,9 +90,9 @@ async def main():
         await stop_event.wait()
     finally:
         # 断开连接
-        await market_data.disconnect()
-        await perp_usdt.disconnect()
-        await perp_coin.disconnect()
+        await binance_spot_market_data.disconnect()
+        await binance_perp_usdt_market_data.disconnect()
+        await binance_perp_coin_market_data.disconnect()
         print("程序已关闭")
 
 if __name__ == "__main__":

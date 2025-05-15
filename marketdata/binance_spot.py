@@ -182,7 +182,7 @@ class BinanceSpotMarketData(MarketDataBase):
             symbol=system_symbol,
             price=Decimal(data['p']),
             quantity=Decimal(data['q']),
-            side='buy' if data['m'] else 'sell',
+            side='sell' if data['m'] else 'buy',
             timestamp=data['E'],
             trade_id=str(data['t'])
         )
