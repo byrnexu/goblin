@@ -85,7 +85,8 @@ class MarketDataBase(ABC):
         """
         if symbol not in self._orderbook_callbacks:
             self._orderbook_callbacks[symbol] = []
-        self._orderbook_callbacks[symbol].append(callback)
+        if callback not in self._orderbook_callbacks[symbol]:
+            self._orderbook_callbacks[symbol].append(callback)
     
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """订阅逐笔成交数据
@@ -98,7 +99,8 @@ class MarketDataBase(ABC):
         """
         if symbol not in self._trade_callbacks:
             self._trade_callbacks[symbol] = []
-        self._trade_callbacks[symbol].append(callback)
+        if callback not in self._trade_callbacks[symbol]:
+            self._trade_callbacks[symbol].append(callback)
     
     def unsubscribe_orderbook(self, symbol: str, callback: Optional[Callable[[OrderBook], Union[None, Awaitable[None]]]] = None) -> None:
         """取消订阅订单簿数据
