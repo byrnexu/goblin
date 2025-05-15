@@ -41,4 +41,40 @@ def _binance_from_exchange(symbol: str) -> str:
 
 register_symbol_adapter("binance_spot", _binance_to_exchange, _binance_from_exchange)
 
+# BinancePerp适配器（USDT本位和币本位）
+
+def _binance_perp_usdt_to_exchange(symbol: str) -> str:
+    # BTC-USDT-PERP -> BTCUSDT
+    if symbol.endswith("-USDT-PERP"):
+        base = symbol[:-10]
+        return f"{base}USDT"
+    return symbol
+
+def _binance_perp_usdt_from_exchange(symbol: str) -> str:
+    # BTCUSDT -> BTC-USDT-PERP
+    symbol = symbol.upper()
+    if symbol.endswith("USDT"):
+        base = symbol[:-4]
+        return f"{base}-USDT-PERP"
+    return symbol
+
+register_symbol_adapter("binance_perp_usdt", _binance_perp_usdt_to_exchange, _binance_perp_usdt_from_exchange)
+
+def _binance_perp_coin_to_exchange(symbol: str) -> str:
+    # BTC-USD-PERP -> BTCUSD_PERP
+    if symbol.endswith("-USD-PERP"):
+        base = symbol[:-9]
+        return f"{base}USD_PERP"
+    return symbol
+
+def _binance_perp_coin_from_exchange(symbol: str) -> str:
+    # BTCUSD_PERP -> BTC-USD-PERP
+    symbol = symbol.upper()
+    if symbol.endswith("USD_PERP"):
+        base = symbol[:-8]
+        return f"{base}-USD-PERP"
+    return symbol
+
+register_symbol_adapter("binance_perp_coin", _binance_perp_coin_to_exchange, _binance_perp_coin_from_exchange)
+
 # 其他交易所可继续注册

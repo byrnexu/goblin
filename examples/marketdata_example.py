@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from marketdata.binance_spot import BinanceSpotMarketData
 from marketdata.base import OrderBook, Trade
+from marketdata.binance_perp import BinancePerpMarketData
 
 async def orderbook_callback(orderbook: OrderBook) -> None:
     """订单簿数据回调函数
@@ -49,16 +50,24 @@ async def main():
     3. 订阅数据
     4. 处理程序退出
     """
-    # 创建币安市场数据实例
+    # 创建币安现货市场数据实例
     market_data = BinanceSpotMarketData()
-
-    # 连接到币安
     await market_data.connect()
-
-    # 订阅BTC/USDT、JUP/USDT、SOL/USDT的订单簿和成交数据（统一格式：BASE/QUOTE）
     market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
     market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
     market_data.subscribe_trades("BTC/USDT", trade_callback)
+
+    # 创建币安USDT本位永续合约市场数据实例
+    perp_usdt = BinancePerpMarketData(contract_type='usdt')
+    await perp_usdt.connect()
+    perp_usdt.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
+    perp_usdt.subscribe_trades("BTC-USDT-PERP", trade_callback)
+
+    # 创建币安币本位永续合约市场数据实例
+    perp_coin = BinancePerpMarketData(contract_type='coin')
+    await perp_coin.connect()
+    perp_coin.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
+    perp_coin.subscribe_trades("BTC-USD-PERP", trade_callback)
 
     # 创建事件来通知程序退出
     stop_event = asyncio.Event()
@@ -82,6 +91,8 @@ async def main():
     finally:
         # 断开连接
         await market_data.disconnect()
+        await perp_usdt.disconnect()
+        await perp_coin.disconnect()
         print("程序已关闭")
 
 if __name__ == "__main__":
