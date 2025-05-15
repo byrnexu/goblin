@@ -7,7 +7,7 @@ import signal
 # 添加项目根目录到Python路径，确保可以导入marketdata模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from marketdata.binance import BinanceMarketData
+from marketdata.binance_spot import BinanceSpotMarketData
 from marketdata.base import OrderBook, Trade
 
 async def orderbook_callback(orderbook: OrderBook) -> None:
@@ -50,7 +50,7 @@ async def main():
     4. 处理程序退出
     """
     # 创建币安市场数据实例
-    market_data = BinanceMarketData()
+    market_data = BinanceSpotMarketData()
 
     # 连接到币安
     await market_data.connect()

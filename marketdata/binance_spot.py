@@ -5,12 +5,12 @@ from decimal import Decimal
 import websockets
 import aiohttp
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
-from .config import BinanceConfig
+from .config import BinanceSpotConfig
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
 
-class BinanceMarketData(MarketDataBase):
+class BinanceSpotMarketData(MarketDataBase):
     """币安交易所市场数据实现
 
     实现了币安交易所的WebSocket API，提供实时市场数据订阅功能。
@@ -21,9 +21,9 @@ class BinanceMarketData(MarketDataBase):
     4. 订单簿快照获取
     """
 
-    def __init__(self, config: BinanceConfig = BinanceConfig()):
+    def __init__(self, config: BinanceSpotConfig = BinanceSpotConfig()):
         super().__init__()
-        self.logger = get_logger("BinanceMarketData")
+        self.logger = get_logger("BinanceSpotMarketData")
         self._config = config
         self._ws_url = config.WS_URL
         self._rest_url = config.REST_URL

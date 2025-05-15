@@ -1,4 +1,4 @@
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
-from .binance import BinanceMarketData
+from .binance_spot import BinanceSpotMarketData
 
-__all__ = ['MarketDataBase', 'OrderBook', 'OrderBookLevel', 'Trade', 'BinanceMarketData'] 
+__all__ = ['MarketDataBase', 'OrderBook', 'OrderBookLevel', 'Trade', 'BinanceSpotMarketData']
