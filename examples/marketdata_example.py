@@ -55,10 +55,10 @@ async def main():
     # 连接到币安
     await market_data.connect()
 
-    # 订阅BTCUSDT的订单簿和成交数据
-    market_data.subscribe_orderbook("JUPUSDT", orderbook_callback)
-    market_data.subscribe_orderbook("SOLUSDT", orderbook_callback)
-    market_data.subscribe_trades("BTCUSDT", trade_callback)
+    # 订阅BTC/USDT、JUP/USDT、SOL/USDT的订单簿和成交数据（统一格式：BASE/QUOTE）
+    market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
+    market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
+    market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建事件来通知程序退出
     stop_event = asyncio.Event()

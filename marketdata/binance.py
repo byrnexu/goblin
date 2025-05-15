@@ -8,6 +8,7 @@ from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
 from .config import BinanceConfig
 from sortedcontainers import SortedDict
 from util.logger import get_logger
+from util.symbol_convert import to_exchange, from_exchange
 
 class BinanceMarketData(MarketDataBase):
     """币安交易所市场数据实现
@@ -146,30 +147,27 @@ class BinanceMarketData(MarketDataBase):
         Args:
             data: 订单簿更新数据，包含买单和卖单的更新信息
         """
-        symbol = data['s']
+        # 交易所symbol转系统symbol
+        system_symbol = from_exchange(data['s'], "binance_spot")
 
         # 获取或创建订单簿
-        if symbol not in self._orderbook_snapshot_cache:
-            # 反复获取订单簿快照，直到其lastUpdateId大于缓存中增量订单簿的U值
-            if not await self._ensure_last_update_id_is_greater_than_U(symbol, data):
-                self.logger.error(f"为 {symbol} 同步初始订单簿快照失败或操作被中断，放弃处理当前消息。")
-                return # 如果同步失败或被中断，则不处理当前消息
+        if system_symbol not in self._orderbook_snapshot_cache:
+            if not await self._ensure_last_update_id_is_greater_than_U(system_symbol, data):
+                self.logger.error(f"为 {system_symbol} 同步初始订单簿快照失败或操作被中断，放弃处理当前消息。")
+                return
 
-        # 如果增量订单簿中最新的记录的u值小于快照中的lastUpdateId，说明增量订单簿太旧，需要继续获取更新的
         u_in_last_orderbook_update = data['u']
-        last_update_id_in_snapshot = self._orderbook_snapshot_cache[symbol].aux_data['lastUpdateId']
-        if self._u_is_less_than_last_update_id(symbol, data):
-            self.logger.info(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={last_update_id_in_snapshot})。清空 {symbol} 的增量订单簿并跳过当前消息。")
+        last_update_id_in_snapshot = self._orderbook_snapshot_cache[system_symbol].aux_data['lastUpdateId']
+        if self._u_is_less_than_last_update_id(system_symbol, data):
+            self.logger.info(f"增量订单簿中最后的更新 ({system_symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={last_update_id_in_snapshot})。清空 {system_symbol} 的增量订单簿并跳过当前消息。")
             return
         else:
-            self.logger.debug(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={last_update_id_in_snapshot})。合并 {symbol} 的增量订单簿。")
+            self.logger.debug(f"增量订单簿中最后的更新 ({system_symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={last_update_id_in_snapshot})。合并 {system_symbol} 的增量订单簿。")
 
-        # 将增量更新合并到快照中
-        self._merge_orderbook_update_to_snapshot(symbol, data)
-        self.logger.debug(f"合并后 {symbol} 买盘档数: {len(self._orderbook_snapshot_cache[symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[symbol].asks)}")
+        self._merge_orderbook_update_to_snapshot(system_symbol, data)
+        self.logger.debug(f"合并后 {system_symbol} 买盘档数: {len(self._orderbook_snapshot_cache[system_symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[system_symbol].asks)}")
 
-        # 通知订单簿已更新
-        await self._notify_orderbook(self._orderbook_snapshot_cache[symbol])
+        await self._notify_orderbook(self._orderbook_snapshot_cache[system_symbol])
 
     async def _handle_trade(self, data: dict) -> None:
         """处理成交消息
@@ -179,8 +177,9 @@ class BinanceMarketData(MarketDataBase):
         Args:
             data: 成交数据，包含价格、数量、方向等信息
         """
+        system_symbol = from_exchange(data['s'], "binance_spot")
         trade = Trade(
-            symbol=data['s'],
+            symbol=system_symbol,
             price=Decimal(data['p']),
             quantity=Decimal(data['q']),
             side='buy' if data['m'] else 'sell',
@@ -253,10 +252,9 @@ class BinanceMarketData(MarketDataBase):
             return
 
         try:
-            # 获取订单簿快照
             url = f"{self._rest_url}/depth"
             params = {
-                "symbol": symbol,
+                "symbol": to_exchange(symbol, "binance_spot"),
                 "limit": self._orderbook_depth_limit
             }
 
@@ -306,9 +304,10 @@ class BinanceMarketData(MarketDataBase):
         """
         super().subscribe_orderbook(symbol, callback)
         if self._ws:
+            exchange_symbol = to_exchange(symbol, "binance_spot")
             subscribe_msg = {
                 "method": "SUBSCRIBE",
-                "params": [f"{symbol.lower()}@depth@{self._orderbook_update_interval}"],
+                "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
                 "id": self._next_request_id
             }
             self._next_request_id += 1
@@ -327,9 +326,10 @@ class BinanceMarketData(MarketDataBase):
         """
         super().subscribe_trades(symbol, callback)
         if self._ws:
+            exchange_symbol = to_exchange(symbol, "binance_spot")
             subscribe_msg = {
                 "method": "SUBSCRIBE",
-                "params": [f"{symbol.lower()}@trade"],
+                "params": [f"{exchange_symbol.lower()}@trade"],
                 "id": self._next_request_id
             }
             self._next_request_id += 1
