@@ -57,6 +57,7 @@ async def main():
 
     # 订阅BTCUSDT的订单簿和成交数据
     market_data.subscribe_orderbook("JUPUSDT", orderbook_callback)
+    market_data.subscribe_orderbook("SOLUSDT", orderbook_callback)
     market_data.subscribe_trades("BTCUSDT", trade_callback)
 
     # 创建事件来通知程序退出

@@ -159,14 +159,14 @@ class BinanceMarketData(MarketDataBase):
         u_in_last_orderbook_update = data['u']
         last_update_id_in_snapshot = self._orderbook_snapshot_cache[symbol].aux_data['lastUpdateId']
         if self._u_is_less_than_last_update_id(symbol, data):
-            self.logger.warning(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={last_update_id_in_snapshot})。清空 {symbol} 的增量订单簿并跳过当前消息。")
+            self.logger.info(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={last_update_id_in_snapshot})。清空 {symbol} 的增量订单簿并跳过当前消息。")
             return
         else:
-            self.logger.info(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={last_update_id_in_snapshot})。合并 {symbol} 的增量订单簿。")
+            self.logger.debug(f"增量订单簿中最后的更新 ({symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={last_update_id_in_snapshot})。合并 {symbol} 的增量订单簿。")
 
         # 将增量更新合并到快照中
         self._merge_orderbook_update_to_snapshot(symbol, data)
-        self.logger.info(f"合并后 {symbol} 买盘档数: {len(self._orderbook_snapshot_cache[symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[symbol].asks)}")
+        self.logger.debug(f"合并后 {symbol} 买盘档数: {len(self._orderbook_snapshot_cache[symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[symbol].asks)}")
 
         # 通知订单簿已更新
         await self._notify_orderbook(self._orderbook_snapshot_cache[symbol])
@@ -213,7 +213,7 @@ class BinanceMarketData(MarketDataBase):
 
     async def _ensure_last_update_id_is_greater_than_U(self, symbol: str, data: dict) -> bool:
         """反复获取订单簿快照，直到其lastUpdateId大于缓存中增量订单簿的U值"""
-        self.logger.info(f"正在为 {symbol} 同步订单簿快照与缓存消息...")
+        self.logger.info(f"正在为 {symbol} 获取同步订单簿快照...")
         while self._running:  # 确保在断开连接时停止
             await self._get_orderbook_snapshot(symbol)
 
@@ -225,7 +225,7 @@ class BinanceMarketData(MarketDataBase):
                 continue
 
             last_update_id_in_snapshot = self._orderbook_snapshot_cache[symbol].aux_data['lastUpdateId']
-            u_in_last_orderbook_update  = data['U']
+            u_in_last_orderbook_update = data['U']
 
             # 条件：快照的lastUpdateId > 缓存消息的U (First update ID in event)
             if last_update_id_in_snapshot > u_in_last_orderbook_update:
@@ -234,11 +234,11 @@ class BinanceMarketData(MarketDataBase):
                 return True  # 同步成功
             else:
                 u_values = [msg.get('U') for msg in orderbook_update_for_symbol if 'U' in msg]
-                self.logger.warning(f"快照 for {symbol} (lastUpdateId: {last_update_id_in_snapshot}) "
+                self.logger.info(f"快照 for {symbol} (lastUpdateId: {last_update_id_in_snapshot}) "
                       f"未满足条件 (未大于增量订单簿的 'U' 值: {u_in_last_orderbook_update})。1秒后重试获取快照...")
                 await asyncio.sleep(1)
 
-        self.logger.error(f"为 {symbol} 同步订单簿快照的操作因服务停止而被中断。")
+        self.logger.info(f"为 {symbol} 同步订单簿快照的操作因服务停止而被中断。")
         return False # 仅当 self._running 为 False 时到达此处
 
     async def _get_orderbook_snapshot(self, symbol: str) -> None:
@@ -283,7 +283,7 @@ class BinanceMarketData(MarketDataBase):
 
                     # 保存订单簿
                     self._orderbook_snapshot_cache[symbol] = orderbook
-                    self.logger.info(f"快照 {symbol} 买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
+                    self.logger.debug(f"快照 {symbol} 买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
 
                     # 通知更新
                     await self._notify_orderbook(orderbook)

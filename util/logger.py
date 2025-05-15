@@ -35,6 +35,15 @@ def get_logger(name: str, level=logging.INFO):
         size_handler.setFormatter(formatter)
         logger.addHandler(time_handler)
         logger.addHandler(size_handler)
+    # 控制台输出
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(
+        '[%(asctime)s][%(levelname)s][%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
     logger.propagate = False
     _loggers[name] = logger
     return logger 
