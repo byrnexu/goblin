@@ -55,6 +55,8 @@ class BinanceMarketData(MarketDataBase):
         self._running = True
         self._message_handler_task = asyncio.create_task(self._handle_messages())
 
+        super().resubscribe_all()
+
     async def disconnect(self) -> None:
         """断开与币安WebSocket服务器的连接
 
@@ -119,6 +121,7 @@ class BinanceMarketData(MarketDataBase):
                     print(f"连接已断开，正在重连...")
                     await asyncio.sleep(1)
                     await self.connect()
+                    super().resubscribe_all()
             except asyncio.CancelledError:
                 # 任务被取消，正常退出
                 break
@@ -127,6 +130,7 @@ class BinanceMarketData(MarketDataBase):
                     print(f"处理消息时出错: {e}")
                     await asyncio.sleep(1)
                     await self.connect()
+                    super().resubscribe_all()
 
     async def _handle_orderbook_update(self, data: dict) -> None:
         """处理订单簿更新消息

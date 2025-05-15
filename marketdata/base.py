@@ -156,4 +156,18 @@ class MarketDataBase(ABC):
             for callback in self._trade_callbacks[trade.symbol]:
                 result = callback(trade)
                 if asyncio.iscoroutine(result):
-                    await result 
+                    await result
+
+    def get_all_orderbook_subscribed_symbols(self):
+        return list(self._orderbook_callbacks.keys())
+
+    def get_all_trade_subscribed_symbols(self):
+        return list(self._trade_callbacks.keys())
+
+    def resubscribe_all(self):
+        for symbol in self.get_all_orderbook_subscribed_symbols():
+            for callback in self._orderbook_callbacks[symbol]:
+                self.subscribe_orderbook(symbol, callback)
+        for symbol in self.get_all_trade_subscribed_symbols():
+            for callback in self._trade_callbacks[symbol]:
+                self.subscribe_trades(symbol, callback) 
