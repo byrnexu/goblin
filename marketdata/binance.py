@@ -6,6 +6,7 @@ import websockets
 import aiohttp
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
 from .config import BinanceConfig
+from sortedcontainers import SortedDict
 
 class BinanceMarketData(MarketDataBase):
     """币安交易所市场数据实现
@@ -265,23 +266,19 @@ class BinanceMarketData(MarketDataBase):
                     # 创建订单簿对象
                     orderbook = OrderBook(
                         symbol=symbol,
-                        bids=[
-                            OrderBookLevel(
-                                price=Decimal(bid[0]),
-                                quantity=Decimal(bid[1])
-                            )
-                            for bid in data["bids"]
-                        ],
-                        asks=[
-                            OrderBookLevel(
-                                price=Decimal(ask[0]),
-                                quantity=Decimal(ask[1])
-                            )
-                            for ask in data["asks"]
-                        ],
+                        bids=SortedDict(lambda x: -x),  # 价格降序
+                        asks=SortedDict(),              # 价格升序
                         timestamp=0,
                         aux_data={'lastUpdateId': data['lastUpdateId']} # 将lastUpdateId存入aux_data
                     )
+                    for bid in data["bids"]:
+                        price = Decimal(bid[0])
+                        quantity = Decimal(bid[1])
+                        orderbook.bids[price] = OrderBookLevel(price, quantity)
+                    for ask in data["asks"]:
+                        price = Decimal(ask[0])
+                        quantity = Decimal(ask[1])
+                        orderbook.asks[price] = OrderBookLevel(price, quantity)
 
                     # 保存订单簿
                     self._orderbook_snapshot_cache[symbol] = orderbook
@@ -340,45 +337,22 @@ class BinanceMarketData(MarketDataBase):
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
         """将增量订单簿更新合并到现有的快照中。"""
         orderbook = self._orderbook_snapshot_cache[symbol]
-
         # 更新买单
         for bid in data['b']:
             price = Decimal(bid[0])
             quantity = Decimal(bid[1])
             if quantity == 0:
-                # 删除价格为price的买单
-                orderbook.bids = [level for level in orderbook.bids if level.price != price]
+                orderbook.bids.pop(price, None)
             else:
-                # 更新或添加买单
-                found = False
-                for level in orderbook.bids:
-                    if level.price == price:
-                        level.quantity = quantity
-                        found = True
-                        break
-                if not found:
-                    orderbook.bids.append(OrderBookLevel(price, quantity))
-                    orderbook.bids.sort(key=lambda x: x.price, reverse=True)
-
+                orderbook.bids[price] = OrderBookLevel(price, quantity)
         # 更新卖单
         for ask in data['a']:
             price = Decimal(ask[0])
             quantity = Decimal(ask[1])
             if quantity == 0:
-                # 删除价格为price的卖单
-                orderbook.asks = [level for level in orderbook.asks if level.price != price]
+                orderbook.asks.pop(price, None)
             else:
-                # 更新或添加卖单
-                found = False
-                for level in orderbook.asks:
-                    if level.price == price:
-                        level.quantity = quantity
-                        found = True
-                        break
-                if not found:
-                    orderbook.asks.append(OrderBookLevel(price, quantity))
-                    orderbook.asks.sort(key=lambda x: x.price)
-
+                orderbook.asks[price] = OrderBookLevel(price, quantity)
         orderbook.timestamp = data['E']
 
     def resubscribe_all(self):

@@ -20,11 +20,11 @@ async def orderbook_callback(orderbook: OrderBook) -> None:
     """
     print(f"\n订单簿更新 - {orderbook.symbol}")
     print("买单:")
-    for bid in orderbook.bids[:5]:  # 只显示前5档
-        print(f"价格: {bid.price:>10.2f}, 数量: {bid.quantity:>10.4f}")
+    for bid in list(orderbook.bids.values())[:5]:  # 只显示前5档
+        print(f"价格: {bid.price:>10.4f}, 数量: {bid.quantity:>10.4f}")
     print("卖单:")
-    for ask in orderbook.asks[:5]:  # 只显示前5档
-        print(f"价格: {ask.price:>10.2f}, 数量: {ask.quantity:>10.4f}")
+    for ask in list(orderbook.asks.values())[:5]:  # 只显示前5档
+        print(f"价格: {ask.price:>10.4f}, 数量: {ask.quantity:>10.4f}")
 
 async def trade_callback(trade: Trade) -> None:
     """成交数据回调函数
@@ -56,7 +56,7 @@ async def main():
     await market_data.connect()
 
     # 订阅BTCUSDT的订单簿和成交数据
-    market_data.subscribe_orderbook("BTCUSDT", orderbook_callback)
+    market_data.subscribe_orderbook("JUPUSDT", orderbook_callback)
     market_data.subscribe_trades("BTCUSDT", trade_callback)
 
     # 创建事件来通知程序退出

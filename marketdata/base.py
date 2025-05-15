@@ -3,6 +3,7 @@ from typing import Callable, Dict, List, Optional, Union, Awaitable, Any
 from dataclasses import dataclass, field
 from decimal import Decimal
 import asyncio
+from sortedcontainers import SortedDict
 
 @dataclass
 class OrderBookLevel:
@@ -20,8 +21,8 @@ class OrderBook:
     包含交易对的完整订单簿信息，包括买单和卖单
     """
     symbol: str  # 交易对符号，例如 'BTCUSDT'
-    bids: List[OrderBookLevel]  # 买单列表，按价格降序排列（最高价在前）
-    asks: List[OrderBookLevel]  # 卖单列表，按价格升序排列（最低价在前）
+    bids: SortedDict  # 价格降序
+    asks: SortedDict  # 价格升序
     timestamp: int  # 毫秒时间戳，表示订单簿更新的时间
     aux_data: Dict[str, Any] = field(default_factory=dict)  # 通用辅助数据字段
 
