@@ -164,6 +164,7 @@ class BinanceMarketData(MarketDataBase):
 
         # 将增量更新合并到快照中
         self._merge_orderbook_update_to_snapshot(symbol, data)
+        print(f"合并后 {symbol} 买盘档数: {len(self._orderbook_snapshot_cache[symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[symbol].asks)}")
 
         # 通知订单簿已更新
         await self._notify_orderbook(self._orderbook_snapshot_cache[symbol])
@@ -284,6 +285,7 @@ class BinanceMarketData(MarketDataBase):
 
                     # 保存订单簿
                     self._orderbook_snapshot_cache[symbol] = orderbook
+                    print(f"快照 {symbol} 买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
 
                     # 通知更新
                     await self._notify_orderbook(orderbook)
