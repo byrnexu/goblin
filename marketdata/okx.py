@@ -9,6 +9,7 @@ from .config import OkxConfig
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
+from util.websocket_manager import WebSocketManager
 
 class OkxMarketData(MarketDataBase):
     """OKX交易所市场数据实现
@@ -49,13 +50,9 @@ class OkxMarketData(MarketDataBase):
         # 根据市场类型选择对应的symbol转换适配器
         self._symbol_adapter = f"okx_{self._market_type}"
 
-        # WebSocket连接对象
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None
-
-        # 控制消息处理循环的运行状态
-        self._running = False
-        # 消息处理任务
-        self._message_handler_task: Optional[asyncio.Task] = None
+        # 使用WebSocketManager处理连接
+        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
+        self._ws_manager.set_message_handler(self._handle_messages)
 
         # 存储每个交易对的订单簿数据
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
@@ -69,11 +66,7 @@ class OkxMarketData(MarketDataBase):
         建立WebSocket连接并启动消息处理循环
         同时创建HTTP会话用于REST API请求
         """
-        self._ws = await websockets.connect(self._ws_url)
-
-        self._running = True
-        self._message_handler_task = asyncio.create_task(self._handle_messages())
-
+        await self._ws_manager.connect()
         self.resubscribe_all()
 
     async def disconnect(self) -> None:
@@ -84,31 +77,9 @@ class OkxMarketData(MarketDataBase):
         3. 关闭WebSocket连接
         4. 关闭HTTP会话
         """
-        self._running = False
+        await self._ws_manager.disconnect()
 
-        # 取消消息处理任务
-        if self._message_handler_task:
-            self._message_handler_task.cancel()
-            try:
-                await self._message_handler_task
-            except asyncio.CancelledError:
-                pass
-            self._message_handler_task = None
-
-        # 关闭WebSocket连接
-        if self._ws:
-            try:
-                # 设置3秒超时
-                async with asyncio.timeout(3):
-                    await self._ws.close()
-            except (asyncio.TimeoutError, Exception):
-                # 如果超时或发生其他错误，强制关闭连接
-                self._ws.fail_connection()
-            finally:
-                self._ws = None
-
-
-    async def _handle_messages(self) -> None:
+    async def _handle_messages(self, data: dict) -> None:
         """处理WebSocket消息
 
         持续接收并处理WebSocket消息，包括：
@@ -117,56 +88,17 @@ class OkxMarketData(MarketDataBase):
         3. 错误处理
         4. 自动重连
         """
-        while self._running:
-            try:
-                if not self._ws:
-                    await asyncio.sleep(1)
-                    continue
-
-                message = await self._ws.recv()
-                data = json.loads(message)
-
-                # 处理订单簿数据
-                # 获取Spread深度数据。可用频道有：
-
-                # sprd-bbo-tbt: 首次推1档快照数据，以后定量推送，每10毫秒当1档快照数据有变化推送一次1档数据
-                # sprd-books5: 首次推5档快照数据，以后定量推送，每100毫秒当5档快照数据有变化推送一次5档数据
-                # sprd-books-l2-tbt: 首次推400档快照数据，以后增量推送，每10毫秒推送一次变化的数据
-                # 单个连接、交易产品维度，深度频道的推送顺序固定为：sprd-bbo-tbt -> sprd-books-l2-tbt -> sprd-books5
-                if 'arg' in data and 'channel' in data['arg']:
-                    if data['channel']['arg'] == 'sprd-bbo-tbt' or  \
-                        data['channel']['arg'] == 'sprd-books5'  :
-                        await self._handle_orderbook(data)
-                    elif data['channel']['arg'] == 'sprd-books-l2-tbt':
-                        await self._handle_orderbook_update(data)
-                # 处理成交数据
-                elif 'arg' in data and 'channel' in data['arg']:
-                    if data['channel']['arg'] == 'sprd-public-trades':
-                        await self._handle_trade(data)
-                # 处理订阅/退订结果消息
-                if 'event' in data:
-                    self._handle_subscription_event(data)
-            except websockets.exceptions.ConnectionClosed as e:
-                if self._running:
-                    self.logger.warning("连接已断开，正在重连...")
-                    await asyncio.sleep(1)
-                    try:
-                        self._ws = await websockets.connect(self._ws_url)
-                        self.resubscribe_all()
-                    except Exception as e:
-                        self.logger.error(f"重连失败: {e}")
-            except asyncio.CancelledError:
-                # 任务被取消，正常退出
-                break
-            except Exception as e:
-                if self._running:
-                    self.logger.error(f"处理消息时出错: {e}")
-                    await asyncio.sleep(1)
-                    try:
-                        self._ws = await websockets.connect(self._ws_url)
-                        self.resubscribe_all()
-                    except Exception as e:
-                        self.logger.error(f"重连失败: {e}")
+        # 处理具体的消息逻辑
+        if 'arg' in data and 'channel' in data['arg']:
+            if data['channel']['arg'] == 'sprd-bbo-tbt' or data['channel']['arg'] == 'sprd-books5':
+                await self._handle_orderbook(data)
+            elif data['channel']['arg'] == 'sprd-books-l2-tbt':
+                await self._handle_orderbook_update(data)
+        elif 'arg' in data and 'channel' in data['arg']:
+            if data['channel']['arg'] == 'sprd-public-trades':
+                await self._handle_trade(data)
+        if 'event' in data:
+            self._handle_subscription_event(data)
 
     async def _handle_orderbook_snapshot(self, data: dict) -> None:
         """处理订单簿快照消息
@@ -220,7 +152,7 @@ class OkxMarketData(MarketDataBase):
             callback: 订单簿数据回调函数
         """
         super().subscribe_orderbook(symbol, callback)
-        if self._ws:
+        if self._ws_manager._ws:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter)
             subscribe_msg = {
                 "op": "subscribe",
@@ -232,7 +164,7 @@ class OkxMarketData(MarketDataBase):
                 ]
             }
             self.logger.info(f"开始订阅行情: {subscribe_msg}")
-            asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
+            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """订阅逐笔成交数据

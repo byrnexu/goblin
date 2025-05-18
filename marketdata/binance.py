@@ -9,6 +9,7 @@ from .config import BinanceConfig
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
+from util.websocket_manager import WebSocketManager
 
 class BinanceMarketData(MarketDataBase):
     """
@@ -51,6 +52,10 @@ class BinanceMarketData(MarketDataBase):
         self._next_request_id = 1  # WebSocket请求ID
         self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
 
+        # 使用WebSocketManager处理连接
+        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
+        self._ws_manager.set_message_handler(self._handle_messages)
+
     def _symbol_adapter(self):
         """
         获取当前合约类型对应的symbol适配器名
@@ -62,10 +67,9 @@ class BinanceMarketData(MarketDataBase):
         """
         建立WebSocket和REST连接，并启动消息处理循环
         """
-        self._ws = await websockets.connect(self._ws_url)
         self._session = aiohttp.ClientSession()
         self._running = True
-        self._message_handler_task = asyncio.create_task(self._handle_messages())
+        await self._ws_manager.connect()
         self.resubscribe_all()
 
     async def disconnect(self) -> None:
@@ -73,69 +77,24 @@ class BinanceMarketData(MarketDataBase):
         断开WebSocket和REST连接，停止消息处理
         """
         self._running = False
-        if self._message_handler_task:
-            self._message_handler_task.cancel()
-            try:
-                await self._message_handler_task
-            except asyncio.CancelledError:
-                pass
-            self._message_handler_task = None
-        if self._ws:
-            try:
-                async with asyncio.timeout(3):
-                    await self._ws.close()
-            except (asyncio.TimeoutError, Exception):
-                self._ws.fail_connection()
-            finally:
-                self._ws = None
+        await self._ws_manager.disconnect()
         if self._session:
             await self._session.close()
             self._session = None
 
-    async def _handle_messages(self) -> None:
+    async def _handle_messages(self, data: dict) -> None:
         """
         WebSocket消息主循环，处理深度和成交推送，自动重连
         """
-        while self._running:
-            try:
-                if not self._ws:
-                    await asyncio.sleep(1)
-                    continue
-
-                message = await self._ws.recv()
-                data = json.loads(message)
-
-                # 处理订阅/退订结果消息
-                if 'result' in data:
-                    self._handle_subscription_event(data)
-                # 订单簿增量更新
-                elif 'e' in data and data['e'] == 'depthUpdate':
-                    await self._handle_orderbook_update(data)
-                # 逐笔成交
-                elif 'e' in data and data['e'] == self._config.EVENT_TYPE_TRADE[self._market_type]:
-                    await self._handle_trade(data)
-            except websockets.exceptions.ConnectionClosed as e:
-                # 连接断开自动重连
-                if self._running:
-                    self.logger.warning("连接已断开，正在重连...")
-                    await asyncio.sleep(1)
-                    try:
-                        self._ws = await websockets.connect(self._ws_url)
-                        self.resubscribe_all()
-                    except Exception as e:
-                        self.logger.error(f"重连失败: {e}")
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                # 其他异常也尝试重连
-                if self._running:
-                    self.logger.error(f"处理消息时出错: {e}")
-                    await asyncio.sleep(1)
-                    try:
-                        self._ws = await websockets.connect(self._ws_url)
-                        self.resubscribe_all()
-                    except Exception as e:
-                        self.logger.error(f"重连失败: {e}")
+        # 处理订阅/退订结果消息
+        if 'result' in data:
+            self._handle_subscription_event(data)
+        # 订单簿增量更新
+        elif 'e' in data and data['e'] == 'depthUpdate':
+            await self._handle_orderbook_update(data)
+        # 逐笔成交
+        elif 'e' in data and data['e'] == self._config.EVENT_TYPE_TRADE[self._market_type]:
+            await self._handle_trade(data)
 
     async def _handle_orderbook_update(self, data: dict) -> None:
         """
@@ -235,6 +194,7 @@ class BinanceMarketData(MarketDataBase):
         :param symbol: 系统内部symbol
         """
         if not self._session:
+            self.logger.warning(f"为{symbol}获取订单簿快照的session为空。")
             return
         try:
             url = f"{self._rest_url}/depth"
@@ -275,7 +235,7 @@ class BinanceMarketData(MarketDataBase):
         :param callback: 订单簿回调
         """
         super().subscribe_orderbook(symbol, callback)
-        if self._ws:
+        if self._ws_manager._ws:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             subscribe_msg = {
                 "method": "SUBSCRIBE",
@@ -286,7 +246,7 @@ class BinanceMarketData(MarketDataBase):
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             self.logger.info(f"开始订阅行情: {subscribe_msg}")
-            asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
+            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """
@@ -295,7 +255,7 @@ class BinanceMarketData(MarketDataBase):
         :param callback: 成交回调
         """
         super().subscribe_trades(symbol, callback)
-        if self._ws:
+        if self._ws_manager._ws:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             subscribe_msg = {
                 "method": "SUBSCRIBE",
@@ -306,7 +266,7 @@ class BinanceMarketData(MarketDataBase):
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             self.logger.info(f"开始订阅行情: {subscribe_msg}")
-            asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
+            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
 
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
         """
