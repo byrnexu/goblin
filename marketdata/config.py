@@ -19,3 +19,8 @@ class BinancePerpConfig(BaseConfig):
     }
     ORDERBOOK_DEPTH_LIMIT = 1000 # 5 10 20 50 100 500 1000
     ORDERBOOK_UPDATE_INTERVAL = "500ms" # 100ms 250ms 500ms
+
+class OkxConfig(BaseConfig):
+    WS_URL = "wss://ws.okx.com:8443/ws/v5/business"
+    # okx系统后台单个连接、交易产品维度，深度频道的推送顺序固定为：1档 -> 400档 -> 5档
+    ORDERBOOK_DEPTH_LIMIT = 400 # 1 5 400

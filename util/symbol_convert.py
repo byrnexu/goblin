@@ -77,4 +77,42 @@ def _binance_perp_coin_from_exchange(symbol: str) -> str:
 
 register_symbol_adapter("binance_perp_coin", _binance_perp_coin_to_exchange, _binance_perp_coin_from_exchange)
 
+# OKX适配器
+
+def _okx_spot_to_exchange(symbol: str) -> str:
+    return symbol
+
+def _okx_spot_from_exchange(symbol: str) -> str:
+    return symbol
+
+register_symbol_adapter("okx_spot", _okx_spot_to_exchange, _okx_spot_from_exchange)
+
+def _okx_perp_usdt_to_exchange(symbol: str) -> str:
+    # BTC-USDT-PERP -> BTC-USDT_PERP
+    if symbol.endswith("-USDT-PERP"):
+        return symbol[:-5] + "_" + symbol[-4:]
+    return symbol
+
+def _okx_perp_usdt_from_exchange(symbol: str) -> str:
+    # BTC-USDT_PERP -> BTC-USDT-PERP
+    if symbol.endswith("-USDT_PERP"):
+        return symbol[:-5] + "-" + symbol[-4:]
+    return symbol
+
+register_symbol_adapter("okx_perp_usdt", _okx_perp_usdt_to_exchange, _okx_perp_usdt_from_exchange)
+
+def _okx_perp_coin_to_exchange(symbol: str) -> str:
+    # BTC-USD-PERP -> BTCUSD_PERP
+    if symbol.endswith("-USD-PERP"):
+        return symbol.replace("-USD-PERP", "USD_PERP")
+    return symbol
+
+def _okx_perp_coin_from_exchange(symbol: str) -> str:
+    # BTCUSD_PERP -> BTC-USD-PERP
+    if symbol.endswith("USD_PERP"):
+        return symbol.replace("USD_PERP", "-USD-PERP")
+    return symbol
+
+register_symbol_adapter("okx_perp_coin", _okx_perp_coin_to_exchange, _okx_perp_coin_from_exchange)
+
 # 其他交易所可继续注册
