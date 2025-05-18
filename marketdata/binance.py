@@ -23,7 +23,7 @@ class BinanceMarketData(MarketDataBase):
         """
         初始化市场数据对象
         Args:
-            config: OKX配置对象
+            config: Binance配置对象
             market_type: 市场类型，可选值：
                 - "spot": 现货市场
                 - "perp_usdt": USDT本位永续合约
@@ -36,28 +36,29 @@ class BinanceMarketData(MarketDataBase):
         # 将 market_type 转换为驼峰格式
         market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
         self.logger = get_logger(f"Binance{market_type_camel}MarketData")
-
         self.logger.info(f"初始化币安{market_type}市场数据服务...")
 
         self._config = config
+
+        # 使用WebSocketManager处理连接
+        self._ws_url = config.WS_URLS[market_type]
+        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
+        self._ws_manager.set_message_handler(self._handle_messages)
+        self.logger.info(f"币安{market_type}市场数据服务初始化完成")
+
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
-        self._ws_url = config.WS_URLS[market_type]
-        self._rest_url = config.REST_URLS[market_type]
         self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
         self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None  # WebSocket连接对象
+
+        self._rest_url = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
-        self._running = False  # 控制消息循环
+        self._running = False
         self._message_handler_task: Optional[asyncio.Task] = None  # 消息处理任务
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}  # symbol -> 订单簿快照
         self._next_request_id = 1  # WebSocket请求ID
         self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
 
-        # 使用WebSocketManager处理连接
-        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
-        self._ws_manager.set_message_handler(self._handle_messages)
-        self.logger.info(f"币安{market_type}市场数据服务初始化完成")
 
     def _symbol_adapter(self):
         """
