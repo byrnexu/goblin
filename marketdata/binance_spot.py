@@ -45,6 +45,8 @@ class BinanceSpotMarketData(MarketDataBase):
 
         # 用于WebSocket请求的唯一ID
         self._next_request_id = 1
+        # 存储订阅请求内容
+        self._subscription_requests: Dict[int, dict] = {}
 
     async def connect(self) -> None:
         """连接到币安WebSocket服务器
@@ -320,6 +322,8 @@ class BinanceSpotMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
                 "id": self._next_request_id
             }
+            # 记录订阅请求
+            self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
@@ -342,6 +346,8 @@ class BinanceSpotMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@trade"],
                 "id": self._next_request_id
             }
+            # 记录订阅请求
+            self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
@@ -373,12 +379,17 @@ class BinanceSpotMarketData(MarketDataBase):
 
     def _handle_subscription_event(self, data: dict) -> None:
         """处理订阅、退订、错误事件消息并打印日志"""
-        if 'result' in data:
-            if data['result'] is None:
-                self.logger.info(f"订阅成功: id={data.get('id', 'unknown')}")
-            else:
-                self.logger.error(f"订阅失败: id={data.get('id', 'unknown')}, result={data['result']}")
-        elif 'error' in data:
-            code = data['error'].get('code', '')
-            msg = data['error'].get('msg', '')
-            self.logger.error(f"订阅错误: id={data.get('id', 'unknown')}, code={code}, msg={msg}")
+        request_id = data.get('id')
+        if request_id is not None and request_id in self._subscription_requests:
+            request = self._subscription_requests[request_id]
+            if 'result' in data:
+                if data['result'] is None:
+                    self.logger.info(f"订阅成功: id={request_id}, request={request}")
+                else:
+                    self.logger.error(f"订阅失败: id={request_id}, request={request}, result={data['result']}")
+            elif 'error' in data:
+                code = data['error'].get('code', '')
+                msg = data['error'].get('msg', '')
+                self.logger.error(f"订阅错误: id={request_id}, request={request}, code={code}, msg={msg}")
+            # 清理已处理的请求记录
+            del self._subscription_requests[request_id]

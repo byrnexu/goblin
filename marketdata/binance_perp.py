@@ -39,6 +39,7 @@ class BinancePerpMarketData(MarketDataBase):
         self._message_handler_task: Optional[asyncio.Task] = None  # 消息处理任务
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}  # symbol -> 订单簿快照
         self._next_request_id = 1  # WebSocket请求ID
+        self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
 
     def _symbol_adapter(self):
         """
@@ -93,8 +94,12 @@ class BinancePerpMarketData(MarketDataBase):
 
                 message = await self._ws.recv()
                 data = json.loads(message)
+                
+                # 处理订阅/退订结果消息
+                if 'result' in data:
+                    self._handle_subscription_event(data)
                 # 订单簿增量更新
-                if 'e' in data and data['e'] == 'depthUpdate':
+                elif 'e' in data and data['e'] == 'depthUpdate':
                     await self._handle_orderbook_update(data)
                 # 逐笔成交
                 elif 'e' in data and data['e'] == 'aggTrade':
@@ -262,6 +267,8 @@ class BinancePerpMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
                 "id": self._next_request_id
             }
+            # 记录订阅请求
+            self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
@@ -279,6 +286,8 @@ class BinancePerpMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@aggTrade"],
                 "id": self._next_request_id
             }
+            # 记录订阅请求
+            self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
@@ -311,3 +320,20 @@ class BinancePerpMarketData(MarketDataBase):
         """
         self._orderbook_snapshot_cache.clear()
         super().resubscribe_all()
+
+    def _handle_subscription_event(self, data: dict) -> None:
+        """处理订阅、退订、错误事件消息并打印日志"""
+        request_id = data.get('id')
+        if request_id is not None and request_id in self._subscription_requests:
+            request = self._subscription_requests[request_id]
+            if 'result' in data:
+                if data['result'] is None:
+                    self.logger.info(f"订阅成功: id={request_id}, request={request}")
+                else:
+                    self.logger.error(f"订阅失败: id={request_id}, request={request}, result={data['result']}")
+            elif 'error' in data:
+                code = data['error'].get('code', '')
+                msg = data['error'].get('msg', '')
+                self.logger.error(f"订阅错误: id={request_id}, request={request}, code={code}, msg={msg}")
+            # 清理已处理的请求记录
+            del self._subscription_requests[request_id]
