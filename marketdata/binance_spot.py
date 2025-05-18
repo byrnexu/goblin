@@ -105,11 +105,12 @@ class BinanceSpotMarketData(MarketDataBase):
         3. 错误处理
         4. 自动重连
         """
-        if not self._ws:
-            return
-
         while self._running:
             try:
+                if not self._ws:
+                    await asyncio.sleep(1)
+                    continue
+
                 message = await self._ws.recv()
                 data = json.loads(message)
 
@@ -123,8 +124,11 @@ class BinanceSpotMarketData(MarketDataBase):
                 if self._running:
                     self.logger.warning("连接已断开，正在重连...")
                     await asyncio.sleep(1)
-                    await self.connect()
-                    self.resubscribe_all()
+                    try:
+                        self._ws = await websockets.connect(self._ws_url)
+                        self.resubscribe_all()
+                    except Exception as e:
+                        self.logger.error(f"重连失败: {e}")
             except asyncio.CancelledError:
                 # 任务被取消，正常退出
                 break
@@ -132,8 +136,11 @@ class BinanceSpotMarketData(MarketDataBase):
                 if self._running:
                     self.logger.error(f"处理消息时出错: {e}")
                     await asyncio.sleep(1)
-                    await self.connect()
-                    self.resubscribe_all()
+                    try:
+                        self._ws = await websockets.connect(self._ws_url)
+                        self.resubscribe_all()
+                    except Exception as e:
+                        self.logger.error(f"重连失败: {e}")
 
     async def _handle_orderbook_update(self, data: dict) -> None:
         """处理订单簿更新消息
