@@ -7,9 +7,9 @@ import signal
 # 添加项目根目录到Python路径，确保可以导入marketdata模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from marketdata.binance_spot import BinanceSpotMarketData
+from marketdata.binance import BinanceMarketData
 from marketdata.base import OrderBook, Trade
-from marketdata.binance_perp import BinancePerpMarketData
+from marketdata.config import BinanceConfig
 
 async def orderbook_callback(orderbook: OrderBook) -> None:
     """订单簿数据回调函数
@@ -50,21 +50,24 @@ async def main():
     3. 订阅数据
     4. 处理程序退出
     """
+    # 创建配置对象
+    config = BinanceConfig()
+
     # 创建币安现货市场数据实例
-    binance_spot_market_data = BinanceSpotMarketData()
+    binance_spot_market_data = BinanceMarketData(config, market_type="spot")
     await binance_spot_market_data.connect()
     binance_spot_market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
     binance_spot_market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
     binance_spot_market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建币安USDT本位永续合约市场数据实例
-    binance_perp_usdt_market_data = BinancePerpMarketData(contract_type='usdt')
+    binance_perp_usdt_market_data = BinanceMarketData(market_type='perp_usdt')
     await binance_perp_usdt_market_data.connect()
     binance_perp_usdt_market_data.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
     binance_perp_usdt_market_data.subscribe_trades("BTC-USDT-PERP", trade_callback)
 
     # 创建币安币本位永续合约市场数据实例
-    binance_perp_coin_market_data = BinancePerpMarketData(contract_type='coin')
+    binance_perp_coin_market_data = BinanceMarketData(market_type='perp_coin')
     await binance_perp_coin_market_data.connect()
     binance_perp_coin_market_data.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
     binance_perp_coin_market_data.subscribe_trades("BTC-USD-PERP", trade_callback)

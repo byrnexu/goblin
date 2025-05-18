@@ -5,12 +5,12 @@ from decimal import Decimal
 import websockets
 import aiohttp
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
-from .config import BinancePerpConfig
+from .config import BinanceConfig
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
 
-class BinancePerpMarketData(MarketDataBase):
+class BinanceMarketData(MarketDataBase):
     """
     币安永续合约市场数据实现（USDT本位和币本位）
     支持：
@@ -18,21 +18,31 @@ class BinancePerpMarketData(MarketDataBase):
     - 逐笔成交（trade）订阅
     - 自动重连、快照同步、合约类型切换
     """
-    def __init__(self, config: BinancePerpConfig = BinancePerpConfig(), contract_type: str = 'usdt'):
+    def __init__(self, config: BinanceConfig = BinanceConfig(), market_type: str = "spot"):
         """
         初始化市场数据对象
-        :param config: 配置对象，包含WS/REST地址等
-        :param contract_type: 'usdt' 表示USDT本位，'coin' 表示币本位
+        Args:
+            config: OKX配置对象
+            market_type: 市场类型，可选值：
+                - "spot": 现货市场
+                - "perp_usdt": USDT本位永续合约
+                - "perp_coin": 币本位永续合约
         """
         super().__init__()
-        self.logger = get_logger("BinancePerpMarketData")
+
+        self._market_type = market_type
+
+        # 将 market_type 转换为驼峰格式
+        market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
+        self.logger = get_logger(f"Binance{market_type_camel}MarketData")
+
         self._config = config
-        assert contract_type in ('usdt', 'coin')  # 只允许两种类型
-        self._contract_type = contract_type
-        self._ws_url = config.WS_URLS[contract_type]
-        self._rest_url = config.REST_URLS[contract_type]
-        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT
-        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL
+        assert market_type in ('spot', 'perp_usdt', 'perp_coin')
+
+        self._ws_url = config.WS_URLS[market_type]
+        self._rest_url = config.REST_URLS[market_type]
+        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
+        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
         self._ws: Optional[websockets.WebSocketClientProtocol] = None  # WebSocket连接对象
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
         self._running = False  # 控制消息循环
@@ -44,9 +54,9 @@ class BinancePerpMarketData(MarketDataBase):
     def _symbol_adapter(self):
         """
         获取当前合约类型对应的symbol适配器名
-        :return: 'binance_perp_usdt' 或 'binance_perp_coin'
+        :return: 'binance_perp_usdt' 或 'binance_perp_coin' 或 'binance_spot'
         """
-        return f"binance_perp_{self._contract_type}"
+        return f"binance_{self._market_type}"
 
     async def connect(self) -> None:
         """
@@ -102,9 +112,9 @@ class BinancePerpMarketData(MarketDataBase):
                 elif 'e' in data and data['e'] == 'depthUpdate':
                     await self._handle_orderbook_update(data)
                 # 逐笔成交
-                elif 'e' in data and data['e'] == 'aggTrade':
+                elif 'e' in data and data['e'] == self._config.EVENT_TYPE_TRADE[self._market_type]:
                     await self._handle_trade(data)
-            except websockets.exceptions.ConnectionClosed:
+            except websockets.exceptions.ConnectionClosed as e:
                 # 连接断开自动重连
                 if self._running:
                     self.logger.warning("连接已断开，正在重连...")
@@ -157,13 +167,14 @@ class BinancePerpMarketData(MarketDataBase):
         :param data: WebSocket收到的成交数据
         """
         system_symbol = from_exchange(data['s'], self._symbol_adapter())
+        trade_id = str(data['t'] if self._market_type == 'spot' else data['a'])
         trade = Trade(
             symbol=system_symbol,
             price=Decimal(data['p']),
             quantity=Decimal(data['q']),
             side='sell' if data['m'] else 'buy',
             timestamp=data['E'],
-            trade_id=str(data['a'])
+            trade_id=trade_id
         )
         await self._notify_trade(trade)
 
@@ -210,6 +221,10 @@ class BinancePerpMarketData(MarketDataBase):
                 self.logger.info(f"快照同步条件满足 for {symbol}: snapshot_lastUpdateId ({last_update_id_in_snapshot}) > data['U'] ({data['U']})")
                 self.logger.info(f"成功获取并同步了 {symbol} 的订单簿快照。")
                 return True
+            else:
+                u_values = [msg.get('U') for msg in orderbook_update_for_symbol if 'U' in msg]
+                self.logger.info(f"快照 for {symbol} (lastUpdateId: {last_update_id_in_snapshot}) "
+                      f"未满足条件 (未大于增量订单簿的 'U' 值: {u_in_last_orderbook_update})。1秒后重试获取快照...")
             await asyncio.sleep(1)
         self.logger.info(f"为 {symbol} 同步订单簿快照的操作因服务停止而被中断。")
         return False
@@ -284,7 +299,7 @@ class BinancePerpMarketData(MarketDataBase):
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             subscribe_msg = {
                 "method": "SUBSCRIBE",
-                "params": [f"{exchange_symbol.lower()}@aggTrade"],
+                "params": [f"{exchange_symbol.lower()}@{self._config.EVENT_TYPE_TRADE[self._market_type]}"],
                 "id": self._next_request_id
             }
             # 记录订阅请求

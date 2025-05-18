@@ -41,6 +41,8 @@ class OkxMarketData(MarketDataBase):
         self.logger = get_logger(f"Okx{market_type_camel}MarketData")
 
         self._config = config
+        assert market_type in ('spot', 'perp_usdt', 'perp_coin')
+
         self._ws_url = config.WS_URL
         self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT
 
