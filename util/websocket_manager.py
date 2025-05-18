@@ -17,47 +17,63 @@ class WebSocketManager:
     def __init__(self, ws_url: str, logger=None):
         self._ws_url = ws_url
         self.logger = logger or get_logger("WebSocketManager")
+        self.logger.info(f"初始化WebSocket管理器，目标URL: {ws_url}")
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
         self._message_handler_task: Optional[asyncio.Task] = None
         self._message_handler: Optional[Callable[[dict], Awaitable[None]]] = None
+        self.logger.info("WebSocket管理器初始化完成")
         
     async def connect(self) -> None:
         """建立WebSocket连接并启动消息处理循环"""
         self.logger.info(f"正在连接到WebSocket服务器: {self._ws_url}")
-        self._ws = await websockets.connect(self._ws_url)
-        self.logger.info("WebSocket连接已建立")
-        self._running = True
-        self._message_handler_task = asyncio.create_task(self._handle_messages())
+        try:
+            self._ws = await websockets.connect(self._ws_url)
+            self.logger.info("WebSocket连接已建立")
+            self._running = True
+            self._message_handler_task = asyncio.create_task(self._handle_messages())
+            self.logger.info("消息处理循环已启动")
+        except Exception as e:
+            self.logger.error(f"WebSocket连接失败: {e}")
+            raise
         
     async def disconnect(self) -> None:
         """断开WebSocket连接并清理资源"""
         self.logger.info("正在断开WebSocket连接...")
         self._running = False
+        
         if self._message_handler_task:
+            self.logger.debug("正在取消消息处理任务...")
             self._message_handler_task.cancel()
             try:
                 await self._message_handler_task
             except asyncio.CancelledError:
-                pass
+                self.logger.debug("消息处理任务已取消")
             self._message_handler_task = None
             
         if self._ws:
             try:
+                self.logger.debug("正在关闭WebSocket连接...")
                 async with asyncio.timeout(3):
                     await self._ws.close()
-            except (asyncio.TimeoutError, Exception):
+                self.logger.debug("WebSocket连接已正常关闭")
+            except (asyncio.TimeoutError, Exception) as e:
+                self.logger.warning(f"WebSocket连接关闭超时或发生错误: {e}，强制关闭连接")
                 self._ws.fail_connection()
             finally:
                 self._ws = None
-        self.logger.info("WebSocket连接已断开")
+        self.logger.info("WebSocket连接已完全断开")
                 
     async def _handle_messages(self) -> None:
         """处理WebSocket消息的主循环"""
         self.logger.info("开始处理WebSocket消息...")
+        reconnect_count = 0
+        max_reconnect_interval = 30  # 最大重连间隔（秒）
+        
         while self._running:
             try:
                 if not self._ws:
+                    self.logger.debug("WebSocket连接不存在，等待重连...")
                     await asyncio.sleep(1)
                     continue
                     
@@ -74,13 +90,18 @@ class WebSocketManager:
                     
             except websockets.exceptions.ConnectionClosed:
                 if self._running:
-                    self.logger.warning("连接已断开，正在重连...")
-                    await asyncio.sleep(1)
+                    reconnect_count += 1
+                    reconnect_interval = min(2 ** reconnect_count, max_reconnect_interval)
+                    self.logger.warning(f"连接已断开，{reconnect_interval}秒后进行第{reconnect_count}次重连...")
+                    await asyncio.sleep(reconnect_interval)
                     try:
                         self._ws = await websockets.connect(self._ws_url)
                         self.logger.info("重连成功")
+                        reconnect_count = 0  # 重置重连计数
                         if hasattr(self, 'on_reconnect'):
+                            self.logger.debug("正在调用重连回调函数...")
                             await self.on_reconnect()
+                            self.logger.debug("重连回调函数调用完成")
                     except Exception as e:
                         self.logger.error(f"重连失败: {e}")
             except asyncio.CancelledError:
@@ -94,19 +115,27 @@ class WebSocketManager:
                         self._ws = await websockets.connect(self._ws_url)
                         self.logger.info("重连成功")
                         if hasattr(self, 'on_reconnect'):
+                            self.logger.debug("正在调用重连回调函数...")
                             await self.on_reconnect()
+                            self.logger.debug("重连回调函数调用完成")
                     except Exception as e:
                         self.logger.error(f"重连失败: {e}")
                         
     async def send_message(self, message: dict) -> None:
         """发送WebSocket消息"""
         if self._ws:
-            self.logger.debug(f"发送WebSocket消息: {message}")
-            await self._ws.send(json.dumps(message))
+            try:
+                self.logger.debug(f"发送WebSocket消息: {message}")
+                await self._ws.send(json.dumps(message))
+                self.logger.debug("消息发送成功")
+            except Exception as e:
+                self.logger.error(f"发送消息失败: {e}")
+                raise
         else:
             self.logger.warning("WebSocket未连接，无法发送消息")
             
     def set_message_handler(self, handler: Callable[[dict], Awaitable[None]]) -> None:
         """设置消息处理器"""
         self.logger.info("设置消息处理器")
-        self._message_handler = handler 
+        self._message_handler = handler
+        self.logger.debug("消息处理器设置完成") 

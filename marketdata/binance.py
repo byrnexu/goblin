@@ -37,6 +37,8 @@ class BinanceMarketData(MarketDataBase):
         market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
         self.logger = get_logger(f"Binance{market_type_camel}MarketData")
 
+        self.logger.info(f"初始化币安{market_type}市场数据服务...")
+
         self._config = config
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
@@ -55,6 +57,7 @@ class BinanceMarketData(MarketDataBase):
         # 使用WebSocketManager处理连接
         self._ws_manager = WebSocketManager(self._ws_url, self.logger)
         self._ws_manager.set_message_handler(self._handle_messages)
+        self.logger.info(f"币安{market_type}市场数据服务初始化完成")
 
     def _symbol_adapter(self):
         """
@@ -67,66 +70,66 @@ class BinanceMarketData(MarketDataBase):
         """
         建立WebSocket和REST连接，并启动消息处理循环
         """
+        self.logger.info("开始建立市场数据连接...")
         self._session = aiohttp.ClientSession()
         self._running = True
         await self._ws_manager.connect()
         self.resubscribe_all()
+        self.logger.info("市场数据连接建立完成")
 
     async def disconnect(self) -> None:
         """
         断开WebSocket和REST连接，停止消息处理
         """
+        self.logger.info("开始断开市场数据连接...")
         self._running = False
         await self._ws_manager.disconnect()
         if self._session:
             await self._session.close()
             self._session = None
+        self.logger.info("市场数据连接已断开")
 
     async def _handle_messages(self, data: dict) -> None:
         """
         WebSocket消息主循环，处理深度和成交推送，自动重连
         """
-        # 处理订阅/退订结果消息
         if 'result' in data:
             self._handle_subscription_event(data)
-        # 订单簿增量更新
         elif 'e' in data and data['e'] == 'depthUpdate':
+            self.logger.debug(f"收到订单簿更新消息: {data['s']}")
             await self._handle_orderbook_update(data)
-        # 逐笔成交
         elif 'e' in data and data['e'] == self._config.EVENT_TYPE_TRADE[self._market_type]:
+            self.logger.debug(f"收到成交消息: {data['s']}")
             await self._handle_trade(data)
 
     async def _handle_orderbook_update(self, data: dict) -> None:
-        """
-        处理订单簿增量更新消息，自动同步快照并合并增量
-        :param data: WebSocket收到的订单簿增量数据
-        """
         system_symbol = from_exchange(data['s'], self._symbol_adapter())
-        # 若无快照，先同步快照
+        self.logger.debug(f"处理{system_symbol}的订单簿更新...")
+
         if system_symbol not in self._orderbook_snapshot_cache:
+            self.logger.info(f"{system_symbol}没有订单簿快照，开始同步...")
             if not await self._ensure_last_update_id_is_greater_than_U(system_symbol, data):
-                self.logger.error(f"为 {system_symbol} 同步初始订单簿快照失败或操作被中断，放弃处理当前消息。")
+                self.logger.error(f"为{system_symbol}同步初始订单簿快照失败或操作被中断，放弃处理当前消息")
                 return
+
         u_in_last_orderbook_update = data['u']
         last_update_id_in_snapshot = self._orderbook_snapshot_cache[system_symbol].aux_data['lastUpdateId']
-        # 增量早于快照则丢弃
+
         if self._u_is_less_than_last_update_id(system_symbol, data):
-            self.logger.info(f"增量订单簿中最后的更新 ({system_symbol}, u={u_in_last_orderbook_update}) 早于快照 (lastUpdateId={last_update_id_in_snapshot})。清空 {system_symbol} 的增量订单簿并跳过当前消息。")
+            self.logger.info(f"增量订单簿中最后的更新({system_symbol}, u={u_in_last_orderbook_update})早于快照(lastUpdateId={last_update_id_in_snapshot})，清空{system_symbol}的增量订单簿并跳过当前消息")
             return
         else:
-            self.logger.debug(f"增量订单簿中最后的更新 ({system_symbol}, u={u_in_last_orderbook_update}) 晚于快照 (lastUpdateId={last_update_id_in_snapshot})。合并 {system_symbol} 的增量订单簿。")
-        # 合并增量到快照
+            self.logger.debug(f"增量订单簿中最后的更新({system_symbol}, u={u_in_last_orderbook_update})晚于快照(lastUpdateId={last_update_id_in_snapshot})，开始合并{system_symbol}的增量订单簿")
+
         self._merge_orderbook_update_to_snapshot(system_symbol, data)
-        self.logger.debug(f"合并后 {system_symbol} 买盘档数: {len(self._orderbook_snapshot_cache[system_symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[system_symbol].asks)}")
+        self.logger.debug(f"合并后{system_symbol}买盘档数: {len(self._orderbook_snapshot_cache[system_symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[system_symbol].asks)}")
         await self._notify_orderbook(self._orderbook_snapshot_cache[system_symbol])
 
     async def _handle_trade(self, data: dict) -> None:
-        """
-        处理逐笔成交消息，转换为Trade对象并通知订阅者
-        :param data: WebSocket收到的成交数据
-        """
         system_symbol = from_exchange(data['s'], self._symbol_adapter())
         trade_id = str(data['t'] if self._market_type == 'spot' else data['a'])
+        self.logger.debug(f"处理{system_symbol}的成交消息，成交ID: {trade_id}")
+
         trade = Trade(
             symbol=system_symbol,
             price=Decimal(data['p']),
@@ -136,6 +139,7 @@ class BinanceMarketData(MarketDataBase):
             trade_id=trade_id
         )
         await self._notify_trade(trade)
+        self.logger.debug(f"已处理{system_symbol}的成交消息，价格: {trade.price}, 数量: {trade.quantity}, 方向: {trade.side}")
 
     def _u_is_less_than_last_update_id(self, symbol: str, data: dict) -> bool:
         """
@@ -189,12 +193,9 @@ class BinanceMarketData(MarketDataBase):
         return False
 
     async def _get_orderbook_snapshot(self, symbol: str) -> None:
-        """
-        通过REST API获取完整订单簿快照，并初始化本地订单簿
-        :param symbol: 系统内部symbol
-        """
+        self.logger.info(f"开始获取{symbol}的订单簿快照...")
         if not self._session:
-            self.logger.warning(f"为{symbol}获取订单簿快照的session为空。")
+            self.logger.warning(f"为{symbol}获取订单簿快照的session为空")
             return
         try:
             url = f"{self._rest_url}/depth"
@@ -207,8 +208,8 @@ class BinanceMarketData(MarketDataBase):
                     data = await response.json()
                     orderbook = OrderBook(
                         symbol=symbol,
-                        bids=SortedDict(lambda x: -x),  # 买单降序
-                        asks=SortedDict(),              # 卖单升序
+                        bids=SortedDict(lambda x: -x),
+                        asks=SortedDict(),
                         timestamp=0,
                         aux_data={'lastUpdateId': data['lastUpdateId']}
                     )
@@ -221,19 +222,15 @@ class BinanceMarketData(MarketDataBase):
                         quantity = Decimal(ask[1])
                         orderbook.asks[price] = OrderBookLevel(price, quantity)
                     self._orderbook_snapshot_cache[symbol] = orderbook
-                    self.logger.debug(f"快照 {symbol} 买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
+                    self.logger.info(f"成功获取{symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
                     await self._notify_orderbook(orderbook)
                 else:
-                    self.logger.error(f"获取订单簿快照失败: {response.status}")
+                    self.logger.error(f"获取{symbol}订单簿快照失败，HTTP状态码: {response.status}")
         except Exception as e:
-            self.logger.error(f"获取订单簿快照时出错: {e}")
+            self.logger.error(f"获取{symbol}订单簿快照时发生错误: {e}")
 
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
-        """
-        订阅指定symbol的订单簿数据，自动发送WebSocket订阅消息
-        :param symbol: 例如 'BTC-USDT-PERP'
-        :param callback: 订单簿回调
-        """
+        self.logger.info(f"开始订阅{symbol}的订单簿数据...")
         super().subscribe_orderbook(symbol, callback)
         if self._ws_manager._ws:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
@@ -242,18 +239,13 @@ class BinanceMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
                 "id": self._next_request_id
             }
-            # 记录订阅请求
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
-            self.logger.info(f"开始订阅行情: {subscribe_msg}")
+            self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
             asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
-        """
-        订阅指定symbol的逐笔成交数据，自动发送WebSocket订阅消息
-        :param symbol: 例如 'BTC-USDT-PERP'
-        :param callback: 成交回调
-        """
+        self.logger.info(f"开始订阅{symbol}的成交数据...")
         super().subscribe_trades(symbol, callback)
         if self._ws_manager._ws:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
@@ -262,10 +254,9 @@ class BinanceMarketData(MarketDataBase):
                 "params": [f"{exchange_symbol.lower()}@{self._config.EVENT_TYPE_TRADE[self._market_type]}"],
                 "id": self._next_request_id
             }
-            # 记录订阅请求
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
-            self.logger.info(f"开始订阅行情: {subscribe_msg}")
+            self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
             asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
 
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
@@ -292,25 +283,22 @@ class BinanceMarketData(MarketDataBase):
         orderbook.timestamp = data['E']
 
     def resubscribe_all(self):
-        """
-        重新订阅所有已注册的symbol，重建快照缓存
-        """
+        self.logger.info("开始重新订阅所有交易对...")
         self._orderbook_snapshot_cache.clear()
         super().resubscribe_all()
+        self.logger.info("重新订阅完成")
 
     def _handle_subscription_event(self, data: dict) -> None:
-        """处理订阅、退订、错误事件消息并打印日志"""
         request_id = data.get('id')
         if request_id is not None and request_id in self._subscription_requests:
             request = self._subscription_requests[request_id]
             if 'result' in data:
                 if data['result'] is None:
-                    self.logger.info(f"订阅成功: id={request_id}, request={request}")
+                    self.logger.info(f"订阅成功: 请求ID={request_id}, 请求内容={request}")
                 else:
-                    self.logger.error(f"订阅失败: id={request_id}, request={request}, result={data['result']}")
+                    self.logger.error(f"订阅失败: 请求ID={request_id}, 请求内容={request}, 结果={data['result']}")
             elif 'error' in data:
                 code = data['error'].get('code', '')
                 msg = data['error'].get('msg', '')
-                self.logger.error(f"订阅错误: id={request_id}, request={request}, code={code}, msg={msg}")
-            # 清理已处理的请求记录
+                self.logger.error(f"订阅错误: 请求ID={request_id}, 请求内容={request}, 错误码={code}, 错误信息={msg}")
             del self._subscription_requests[request_id]
