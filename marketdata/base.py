@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 import asyncio
 from sortedcontainers import SortedDict
+from util.logger import get_logger
 
 @dataclass
 class OrderBookLevel:
@@ -51,12 +52,16 @@ class MarketDataBase(ABC):
     具体的交易所实现类需要继承这个基类并实现其抽象方法
     """
     
-    def __init__(self, config):
+    def __init__(self, config, market_type: str = "spot"):
         """
         初始化市场数据基础类
         
         Args:
             config: 交易所配置对象
+            market_type: 市场类型，可选值：
+                - "spot": 现货市场
+                - "perp_usdt": USDT本位永续合约
+                - "perp_coin": 币本位永续合约
         """
         # 存储每个交易对的订单簿回调函数列表
         self._orderbook_callbacks: Dict[str, List[Callable[[OrderBook], Union[None, Awaitable[None]]]]] = {}
@@ -64,6 +69,12 @@ class MarketDataBase(ABC):
         self._trade_callbacks: Dict[str, List[Callable[[Trade], Union[None, Awaitable[None]]]]] = {}
         # 存储交易所配置
         self._config = config
+        # 市场类型
+        self._market_type = market_type
+        # 将 market_type 转换为驼峰格式
+        self._market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
+        # 日志记录器
+        self.logger = get_logger(f"{self.__class__.__name__}")
     
     @abstractmethod
     async def connect(self) -> None:

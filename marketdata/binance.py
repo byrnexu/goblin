@@ -29,13 +29,7 @@ class BinanceMarketData(MarketDataBase):
                 - "perp_usdt": USDT本位永续合约
                 - "perp_coin": 币本位永续合约
         """
-        super().__init__(config)
-
-        self._market_type = market_type
-
-        # 将 market_type 转换为驼峰格式
-        market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
-        self.logger = get_logger(f"Binance{market_type_camel}MarketData")
+        super().__init__(config, market_type)
         self.logger.info(f"初始化币安{market_type}市场数据服务...")
 
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')

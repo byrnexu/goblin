@@ -54,7 +54,7 @@ class WebSocketManager:
         if self._ws:
             try:
                 self.logger.debug("正在关闭WebSocket连接...")
-                async with asyncio.timeout(3):
+                async with asyncio.timeout(15):
                     await self._ws.close()
                 self.logger.debug("WebSocket连接已正常关闭")
             except (asyncio.TimeoutError, Exception) as e:
