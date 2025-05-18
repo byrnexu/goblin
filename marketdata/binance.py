@@ -37,12 +37,6 @@ class BinanceMarketData(MarketDataBase):
         self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
         self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
 
-        # 使用WebSocketManager处理连接
-        self._ws_url = config.WS_URLS[market_type]
-        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
-        self._ws_manager.set_message_handler(self._handle_messages)
-        self.logger.info(f"币安{market_type}市场数据服务初始化完成")
-
         self._rest_url = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
         self._running = False

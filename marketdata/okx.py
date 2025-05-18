@@ -37,21 +37,26 @@ class OkxMarketData(MarketDataBase):
 
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
-        self._ws_url = config.WS_URL
         self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT
 
         # 根据市场类型选择对应的symbol转换适配器
         self._symbol_adapter = f"okx_{self._market_type}"
-
-        # 使用WebSocketManager处理连接
-        self._ws_manager = WebSocketManager(self._ws_url, self.logger)
-        self._ws_manager.set_message_handler(self._handle_messages)
 
         # 存储每个交易对的订单簿数据
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
 
         # 用于WebSocket请求的唯一ID
         self._next_request_id = 1
+
+    def get_ws_url(self) -> str:
+        """获取WebSocket URL
+        
+        OKX使用单一的WebSocket URL，而不是按市场类型区分
+        
+        Returns:
+            str: OKX WebSocket URL
+        """
+        return self._config.WS_URL
 
     async def connect(self) -> None:
         """连接到OKX WebSocket服务器
