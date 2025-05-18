@@ -61,15 +61,7 @@ def get_logger(name: str, level=logging.INFO):
         time_handler.setLevel(log_level)
         time_handler.setFormatter(_formatter)
         time_handler.addFilter(LevelFilter(log_level))  # 只记录对应级别及以上日志
-        # 单文件超过100MB时切分，最多保留10个
-        size_handler = RotatingFileHandler(
-            log_file, maxBytes=100*1024*1024, backupCount=10, encoding='utf-8'
-        )
-        size_handler.setLevel(log_level)
-        size_handler.setFormatter(_formatter)
-        size_handler.addFilter(LevelFilter(log_level))
         logger.addHandler(time_handler)
-        logger.addHandler(size_handler)
 
     # 控制台输出handler
     console_handler = logging.StreamHandler()
