@@ -94,7 +94,7 @@ class BinancePerpMarketData(MarketDataBase):
 
                 message = await self._ws.recv()
                 data = json.loads(message)
-                
+
                 # 处理订阅/退订结果消息
                 if 'result' in data:
                     self._handle_subscription_event(data)
@@ -270,6 +270,7 @@ class BinancePerpMarketData(MarketDataBase):
             # 记录订阅请求
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
+            self.logger.info(f"开始订阅行情: {subscribe_msg}")
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
@@ -289,6 +290,7 @@ class BinancePerpMarketData(MarketDataBase):
             # 记录订阅请求
             self._subscription_requests[self._next_request_id] = subscribe_msg
             self._next_request_id += 1
+            self.logger.info(f"开始订阅行情: {subscribe_msg}")
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:

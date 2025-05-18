@@ -229,7 +229,7 @@ class OkxMarketData(MarketDataBase):
                     }
                 ]
             }
-            self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
+            self.logger.info(f"开始订阅行情: {subscribe_msg}")
             asyncio.create_task(self._ws.send(json.dumps(subscribe_msg)))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
