@@ -114,8 +114,11 @@ class BinanceSpotMarketData(MarketDataBase):
                 message = await self._ws.recv()
                 data = json.loads(message)
 
+                # 处理订阅/退订结果消息
+                if 'result' in data:
+                    self._handle_subscription_event(data)
                 # 处理订单簿数据
-                if 'e' in data and data['e'] == 'depthUpdate':
+                elif 'e' in data and data['e'] == 'depthUpdate':
                     await self._handle_orderbook_update(data)
                 # 处理成交数据
                 elif 'e' in data and data['e'] == 'trade':
@@ -367,3 +370,15 @@ class BinanceSpotMarketData(MarketDataBase):
         # 确保会重建orderbook_snapshot
         self._orderbook_snapshot_cache.clear()
         super().resubscribe_all()
+
+    def _handle_subscription_event(self, data: dict) -> None:
+        """处理订阅、退订、错误事件消息并打印日志"""
+        if 'result' in data:
+            if data['result'] is None:
+                self.logger.info(f"订阅成功: id={data.get('id', 'unknown')}")
+            else:
+                self.logger.error(f"订阅失败: id={data.get('id', 'unknown')}, result={data['result']}")
+        elif 'error' in data:
+            code = data['error'].get('code', '')
+            msg = data['error'].get('msg', '')
+            self.logger.error(f"订阅错误: id={data.get('id', 'unknown')}, code={code}, msg={msg}")
