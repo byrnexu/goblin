@@ -51,11 +51,19 @@ class MarketDataBase(ABC):
     具体的交易所实现类需要继承这个基类并实现其抽象方法
     """
     
-    def __init__(self):
+    def __init__(self, config):
+        """
+        初始化市场数据基础类
+        
+        Args:
+            config: 交易所配置对象
+        """
         # 存储每个交易对的订单簿回调函数列表
         self._orderbook_callbacks: Dict[str, List[Callable[[OrderBook], Union[None, Awaitable[None]]]]] = {}
         # 存储每个交易对的成交回调函数列表
         self._trade_callbacks: Dict[str, List[Callable[[Trade], Union[None, Awaitable[None]]]]] = {}
+        # 存储交易所配置
+        self._config = config
     
     @abstractmethod
     async def connect(self) -> None:

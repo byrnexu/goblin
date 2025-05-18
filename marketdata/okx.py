@@ -33,7 +33,7 @@ class OkxMarketData(MarketDataBase):
                 - "perp_usdt": USDT本位永续合约
                 - "perp_coin": 币本位永续合约
         """
-        super().__init__()
+        super().__init__(config)
 
         self._market_type = market_type
 
@@ -41,7 +41,6 @@ class OkxMarketData(MarketDataBase):
         market_type_camel = ''.join(word.capitalize() for word in market_type.split('_'))
         self.logger = get_logger(f"Okx{market_type_camel}MarketData")
 
-        self._config = config
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
         self._ws_url = config.WS_URL

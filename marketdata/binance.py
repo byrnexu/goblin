@@ -29,7 +29,7 @@ class BinanceMarketData(MarketDataBase):
                 - "perp_usdt": USDT本位永续合约
                 - "perp_coin": 币本位永续合约
         """
-        super().__init__()
+        super().__init__(config)
 
         self._market_type = market_type
 
@@ -38,18 +38,16 @@ class BinanceMarketData(MarketDataBase):
         self.logger = get_logger(f"Binance{market_type_camel}MarketData")
         self.logger.info(f"初始化币安{market_type}市场数据服务...")
 
-        self._config = config
+        assert market_type in ('spot', 'perp_usdt', 'perp_coin')
+
+        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
+        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
 
         # 使用WebSocketManager处理连接
         self._ws_url = config.WS_URLS[market_type]
         self._ws_manager = WebSocketManager(self._ws_url, self.logger)
         self._ws_manager.set_message_handler(self._handle_messages)
         self.logger.info(f"币安{market_type}市场数据服务初始化完成")
-
-        assert market_type in ('spot', 'perp_usdt', 'perp_coin')
-
-        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
-        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
 
         self._rest_url = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
@@ -186,7 +184,6 @@ class BinanceMarketData(MarketDataBase):
                 self.logger.info(f"成功获取并同步了 {symbol} 的订单簿快照。")
                 return True
             else:
-                u_values = [msg.get('U') for msg in orderbook_update_for_symbol if 'U' in msg]
                 self.logger.info(f"快照 for {symbol} (lastUpdateId: {last_update_id_in_snapshot}) "
                       f"未满足条件 (未大于增量订单簿的 'U' 值: {u_in_last_orderbook_update})。1秒后重试获取快照...")
             await asyncio.sleep(1)
