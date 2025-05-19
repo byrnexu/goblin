@@ -80,6 +80,8 @@ class MarketDataBase(ABC):
         self.logger.info(f"市场数据服务初始化完成")
         # 存储每个交易对的订单簿快照
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
+        # 运行状态标志
+        self._running = False
 
     def get_ws_url(self) -> str:
         """获取WebSocket URL
