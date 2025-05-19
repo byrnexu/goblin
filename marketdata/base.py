@@ -78,6 +78,8 @@ class MarketDataBase(ABC):
         self._ws_manager = WebSocketManager(self.get_ws_url(), self.logger)
         self._ws_manager.set_message_handler(self._handle_messages)
         self.logger.info(f"市场数据服务初始化完成")
+        # 存储每个交易对的订单簿快照
+        self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
 
     def get_ws_url(self) -> str:
         """获取WebSocket URL

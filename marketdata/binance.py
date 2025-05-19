@@ -40,8 +40,6 @@ class BinanceMarketData(MarketDataBase):
         self._rest_url = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
         self._running = False
-        self._message_handler_task: Optional[asyncio.Task] = None  # 消息处理任务
-        self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}  # symbol -> 订单簿快照
         self._next_request_id = 1  # WebSocket请求ID
         self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
 

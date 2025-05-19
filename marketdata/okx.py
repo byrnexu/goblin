@@ -42,9 +42,6 @@ class OkxMarketData(MarketDataBase):
         # 根据市场类型选择对应的symbol转换适配器
         self._symbol_adapter = f"okx_{self._market_type}"
 
-        # 存储每个交易对的订单簿数据
-        self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
-
         # 用于WebSocket请求的唯一ID
         self._next_request_id = 1
 
