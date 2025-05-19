@@ -7,7 +7,7 @@ from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.websocket_manager import WebSocketManager
 from .event_manager import EventManager
-from .types import OrderBook, OrderBookLevel, Trade
+from .types import OrderBook, OrderBookLevel, Trade, MarketType
 
 @dataclass
 class OrderBookLevel:
@@ -55,16 +55,13 @@ class MarketDataBase(ABC):
     具体的交易所实现类需要继承这个基类并实现其抽象方法
     """
 
-    def __init__(self, config, market_type: str = "spot"):
+    def __init__(self, config, market_type: MarketType = MarketType.SPOT):
         """
         初始化市场数据基础类
 
         Args:
             config: 交易所配置对象
-            market_type: 市场类型，可选值：
-                - "spot": 现货市场
-                - "perp_usdt": USDT本位永续合约
-                - "perp_coin": 币本位永续合约
+            market_type: 市场类型，使用 MarketType 枚举
         """
         # 使用事件管理器管理回调
         self._orderbook_manager: EventManager[OrderBook] = EventManager()
@@ -73,7 +70,7 @@ class MarketDataBase(ABC):
         # 存储交易所配置
         self._config: Any = config
         # 市场类型
-        self._market_type: str = market_type
+        self._market_type: MarketType = market_type
         # 日志记录器
         self.logger = get_logger(f"{self.__class__.__name__}")
         # 创建WebSocket管理器
@@ -104,7 +101,7 @@ class MarketDataBase(ABC):
         获取当前合约类型对应的symbol适配器名
         :return: 'binance_perp_usdt' 或 'binance_perp_coin' 或 'binance_spot'
         """
-        return f"binance_{self._market_type}"
+        return f"binance_{self._market_type.value}"
 
     @abstractmethod
     async def _handle_messages(self, data: dict) -> None:

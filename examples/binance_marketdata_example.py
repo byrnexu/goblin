@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from marketdata.binance import BinanceMarketData
 from marketdata.base import OrderBook, Trade
 from marketdata.config import BinanceConfig
+from marketdata.types import MarketType
 
 async def orderbook_callback(orderbook: OrderBook) -> None:
     """订单簿数据回调函数
@@ -54,20 +55,20 @@ async def main():
     config = BinanceConfig()
 
     # 创建币安现货市场数据实例
-    binance_spot_market_data = BinanceMarketData(config, market_type="spot")
+    binance_spot_market_data = BinanceMarketData(config, market_type=MarketType.SPOT)
     await binance_spot_market_data.connect()
     binance_spot_market_data.subscribe_orderbook("JUP/USDT", orderbook_callback)
     binance_spot_market_data.subscribe_orderbook("SOL/USDT", orderbook_callback)
     binance_spot_market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建币安USDT本位永续合约市场数据实例
-    binance_perp_usdt_market_data = BinanceMarketData(market_type='perp_usdt')
+    binance_perp_usdt_market_data = BinanceMarketData(config, market_type=MarketType.PERP_USDT)
     await binance_perp_usdt_market_data.connect()
     binance_perp_usdt_market_data.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
     binance_perp_usdt_market_data.subscribe_trades("BTC-USDT-PERP", trade_callback)
 
     # 创建币安币本位永续合约市场数据实例
-    binance_perp_coin_market_data = BinanceMarketData(market_type='perp_coin')
+    binance_perp_coin_market_data = BinanceMarketData(config, market_type=MarketType.PERP_COIN)
     await binance_perp_coin_market_data.connect()
     binance_perp_coin_market_data.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
     binance_perp_coin_market_data.subscribe_trades("BTC-USD-PERP", trade_callback)

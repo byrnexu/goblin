@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from marketdata.okx import OkxMarketData
 from marketdata.base import OrderBook, Trade
 from marketdata.config import OkxConfig
+from marketdata.types import MarketType
 
 async def orderbook_callback(orderbook: OrderBook) -> None:
     """订单簿数据回调函数
@@ -54,19 +55,19 @@ async def main():
     config = OkxConfig()
     
     # 创建OKX现货市场数据实例
-    okx_spot_market_data = OkxMarketData(config, market_type="spot")
+    okx_spot_market_data = OkxMarketData(config, market_type=MarketType.SPOT)
     await okx_spot_market_data.connect()
     okx_spot_market_data.subscribe_orderbook("BTC/USDT", orderbook_callback)
     okx_spot_market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建OKX USDT本位永续合约市场数据实例
-    okx_perp_usdt_market_data = OkxMarketData(config, market_type="perp_usdt")
+    okx_perp_usdt_market_data = OkxMarketData(config, market_type=MarketType.PERP_USDT)
     await okx_perp_usdt_market_data.connect()
     okx_perp_usdt_market_data.subscribe_orderbook("BTC/USDT", orderbook_callback)
     okx_perp_usdt_market_data.subscribe_trades("BTC/USDT", trade_callback)
 
     # 创建OKX币本位永续合约市场数据实例
-    okx_perp_coin_market_data = OkxMarketData(config, market_type="perp_coin")
+    okx_perp_coin_market_data = OkxMarketData(config, market_type=MarketType.PERP_COIN)
     await okx_perp_coin_market_data.connect()
     okx_perp_coin_market_data.subscribe_orderbook("BTC/USDT", orderbook_callback)
     okx_perp_coin_market_data.subscribe_trades("BTC/USDT", trade_callback)

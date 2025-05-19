@@ -2,9 +2,10 @@
 市场数据基础类型定义模块
 
 本模块定义了市场数据相关的基础数据结构，包括：
-1. OrderBookLevel: 订单簿中的单个价格档位
-2. OrderBook: 完整的订单簿数据结构
-3. Trade: 成交记录数据结构
+1. MarketType: 市场类型枚举
+2. OrderBookLevel: 订单簿中的单个价格档位
+3. OrderBook: 完整的订单簿数据结构
+4. Trade: 成交记录数据结构
 
 这些类型被用于整个市场数据系统中，用于表示和处理交易所的实时数据。
 """
@@ -12,7 +13,20 @@
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, Any
+from enum import Enum
 from sortedcontainers import SortedDict
+
+class MarketType(Enum):
+    """市场类型枚举
+    
+    定义了支持的市场类型：
+    - SPOT: 现货市场
+    - PERP_USDT: USDT本位永续合约
+    - PERP_COIN: 币本位永续合约
+    """
+    SPOT = "spot"
+    PERP_USDT = "perp_usdt"
+    PERP_COIN = "perp_coin"
 
 @dataclass
 class OrderBookLevel:

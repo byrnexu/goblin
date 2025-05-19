@@ -34,6 +34,7 @@ import websockets
 import aiohttp
 from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
 from .config import BinanceConfig
+from .types import MarketType
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
@@ -66,16 +67,13 @@ class BinanceMarketData(MarketDataBase):
     2. 转换为内部格式
     3. 通知订阅者
     """
-    def __init__(self, config: BinanceConfig = BinanceConfig(), market_type: str = "spot"):
+    def __init__(self, config: BinanceConfig = BinanceConfig(), market_type: MarketType = MarketType.SPOT):
         """
         初始化市场数据对象
 
         Args:
             config: Binance配置对象，包含API地址、深度限制等配置
-            market_type: 市场类型，可选值：
-                - "spot": 现货市场
-                - "perp_usdt": USDT本位永续合约
-                - "perp_coin": 币本位永续合约
+            market_type: 市场类型，使用 MarketType 枚举
 
         初始化过程：
         1. 调用父类初始化
@@ -84,9 +82,7 @@ class BinanceMarketData(MarketDataBase):
         4. 设置请求ID计数器
         """
         super().__init__(config, market_type)
-        self.logger.info(f"初始化币安{market_type}市场数据服务...")
-
-        assert market_type in ('spot', 'perp_usdt', 'perp_coin')
+        self.logger.info(f"初始化币安{market_type.value}市场数据服务...")
 
         # 设置订单簿深度限制和更新间隔
         self._orderbook_depth_limit: int = config.ORDERBOOK_DEPTH_LIMIT[market_type]
@@ -221,7 +217,7 @@ class BinanceMarketData(MarketDataBase):
                 - E: 事件时间
         """
         system_symbol = from_exchange(data['s'], self._symbol_adapter())
-        trade_id = str(data['t'] if self._market_type == 'spot' else data['a'])
+        trade_id = str(data['t'] if self._market_type == MarketType.SPOT else data['a'])
         self.logger.debug(f"处理{system_symbol}的成交消息，成交ID: {trade_id}")
 
         # 创建成交对象
