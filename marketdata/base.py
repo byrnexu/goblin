@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Union, Awaitable, Any, TypeVar, Generic
+from typing import Callable, Dict, List, Optional, Union, Awaitable, Any
 from dataclasses import dataclass, field
 from decimal import Decimal
 import asyncio
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.websocket_manager import WebSocketManager
+from .event_manager import EventManager
+from .types import OrderBook, OrderBookLevel, Trade
 
 @dataclass
 class OrderBookLevel:
@@ -53,7 +55,7 @@ class MarketDataBase(ABC):
     具体的交易所实现类需要继承这个基类并实现其抽象方法
     """
 
-    def __init__(self, config: Any, market_type: str = "spot"):
+    def __init__(self, config, market_type: str = "spot"):
         """
         初始化市场数据基础类
 
@@ -64,10 +66,10 @@ class MarketDataBase(ABC):
                 - "perp_usdt": USDT本位永续合约
                 - "perp_coin": 币本位永续合约
         """
-        # 存储每个交易对的订单簿回调函数列表
-        self._orderbook_callbacks: Dict[str, List[Callable[[OrderBook], Union[None, Awaitable[None]]]]] = {}
-        # 存储每个交易对的成交回调函数列表
-        self._trade_callbacks: Dict[str, List[Callable[[Trade], Union[None, Awaitable[None]]]]] = {}
+        # 使用事件管理器管理回调
+        self._orderbook_manager: EventManager[OrderBook] = EventManager()
+        self._trade_manager: EventManager[Trade] = EventManager()
+        
         # 存储交易所配置
         self._config: Any = config
         # 市场类型
@@ -142,10 +144,7 @@ class MarketDataBase(ABC):
             symbol: 交易对符号，例如 'BTCUSDT'
             callback: 订单簿数据回调函数，可以是同步或异步函数
         """
-        if symbol not in self._orderbook_callbacks:
-            self._orderbook_callbacks[symbol] = []
-        if callback not in self._orderbook_callbacks[symbol]:
-            self._orderbook_callbacks[symbol].append(callback)
+        self._orderbook_manager.subscribe(symbol, callback)
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """订阅逐笔成交数据
@@ -156,10 +155,7 @@ class MarketDataBase(ABC):
             symbol: 交易对符号，例如 'BTCUSDT'
             callback: 成交数据回调函数，可以是同步或异步函数
         """
-        if symbol not in self._trade_callbacks:
-            self._trade_callbacks[symbol] = []
-        if callback not in self._trade_callbacks[symbol]:
-            self._trade_callbacks[symbol].append(callback)
+        self._trade_manager.subscribe(symbol, callback)
 
     def unsubscribe_orderbook(self, symbol: str, callback: Optional[Callable[[OrderBook], Union[None, Awaitable[None]]]] = None) -> None:
         """取消订阅订单簿数据
@@ -170,11 +166,7 @@ class MarketDataBase(ABC):
             symbol: 交易对符号
             callback: 要取消的回调函数，如果为None则取消该交易对的所有回调
         """
-        if symbol in self._orderbook_callbacks:
-            if callback is None:
-                del self._orderbook_callbacks[symbol]
-            else:
-                self._orderbook_callbacks[symbol].remove(callback)
+        self._orderbook_manager.unsubscribe(symbol, callback)
 
     def unsubscribe_trades(self, symbol: str, callback: Optional[Callable[[Trade], Union[None, Awaitable[None]]]] = None) -> None:
         """取消订阅逐笔成交数据
@@ -185,11 +177,7 @@ class MarketDataBase(ABC):
             symbol: 交易对符号
             callback: 要取消的回调函数，如果为None则取消该交易对的所有回调
         """
-        if symbol in self._trade_callbacks:
-            if callback is None:
-                del self._trade_callbacks[symbol]
-            else:
-                self._trade_callbacks[symbol].remove(callback)
+        self._trade_manager.unsubscribe(symbol, callback)
 
     async def _notify_orderbook(self, orderbook: OrderBook) -> None:
         """通知订单簿数据更新
@@ -199,11 +187,7 @@ class MarketDataBase(ABC):
         Args:
             orderbook: 更新后的订单簿数据
         """
-        if orderbook.symbol in self._orderbook_callbacks:
-            for callback in self._orderbook_callbacks[orderbook.symbol]:
-                result = callback(orderbook)
-                if asyncio.iscoroutine(result):
-                    await result
+        await self._orderbook_manager.notify(orderbook.symbol, orderbook)
 
     async def _notify_trade(self, trade: Trade) -> None:
         """通知成交数据更新
@@ -213,25 +197,28 @@ class MarketDataBase(ABC):
         Args:
             trade: 新的成交数据
         """
-        if trade.symbol in self._trade_callbacks:
-            for callback in self._trade_callbacks[trade.symbol]:
-                result = callback(trade)
-                if asyncio.iscoroutine(result):
-                    await result
+        await self._trade_manager.notify(trade.symbol, trade)
 
-    def get_all_orderbook_subscribed_symbols(self):
-        return list(self._orderbook_callbacks.keys())
+    def get_all_orderbook_subscribed_symbols(self) -> List[str]:
+        """获取所有已订阅订单簿的交易对
+        
+        Returns:
+            List[str]: 已订阅订单簿的交易对列表
+        """
+        return self._orderbook_manager.get_subscribed_symbols()
 
-    def get_all_trade_subscribed_symbols(self):
-        return list(self._trade_callbacks.keys())
+    def get_all_trade_subscribed_symbols(self) -> List[str]:
+        """获取所有已订阅成交的交易对
+        
+        Returns:
+            List[str]: 已订阅成交的交易对列表
+        """
+        return self._trade_manager.get_subscribed_symbols()
 
-    def resubscribe_all(self):
-        for symbol in self.get_all_orderbook_subscribed_symbols():
-            for callback in self._orderbook_callbacks[symbol]:
-                self.subscribe_orderbook(symbol, callback)
-        for symbol in self.get_all_trade_subscribed_symbols():
-            for callback in self._trade_callbacks[symbol]:
-                self.subscribe_trades(symbol, callback)
+    def resubscribe_all(self) -> None:
+        """重新订阅所有已订阅的交易对数据"""
+        # 由于事件管理器已经保存了所有订阅信息，这里不需要做任何事情
+        pass
 
     async def _handle_reconnect(self) -> None:
         """
