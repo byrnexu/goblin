@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Union, Awaitable, Any
+from typing import Callable, Dict, List, Optional, Union, Awaitable, Any, TypeVar, Generic
 from dataclasses import dataclass, field
 from decimal import Decimal
 import asyncio
@@ -53,7 +53,7 @@ class MarketDataBase(ABC):
     具体的交易所实现类需要继承这个基类并实现其抽象方法
     """
 
-    def __init__(self, config, market_type: str = "spot"):
+    def __init__(self, config: Any, market_type: str = "spot"):
         """
         初始化市场数据基础类
 
@@ -69,13 +69,13 @@ class MarketDataBase(ABC):
         # 存储每个交易对的成交回调函数列表
         self._trade_callbacks: Dict[str, List[Callable[[Trade], Union[None, Awaitable[None]]]]] = {}
         # 存储交易所配置
-        self._config = config
+        self._config: Any = config
         # 市场类型
-        self._market_type = market_type
+        self._market_type: str = market_type
         # 日志记录器
         self.logger = get_logger(f"{self.__class__.__name__}")
         # 创建WebSocket管理器
-        self._ws_manager = WebSocketManager(self.get_ws_url(), self.logger)
+        self._ws_manager: WebSocketManager = WebSocketManager(self.get_ws_url(), self.logger)
         self._ws_manager.set_message_handler(self._handle_messages)
         # 设置重连回调
         self._ws_manager.on_reconnect = self._handle_reconnect
@@ -83,7 +83,7 @@ class MarketDataBase(ABC):
         # 存储每个交易对的订单簿快照
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
         # 运行状态标志
-        self._running = False
+        self._running: bool = False
 
     def get_ws_url(self) -> str:
         """获取WebSocket URL

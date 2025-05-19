@@ -1,6 +1,6 @@
 import json
 import asyncio
-from typing import Dict, List, Optional, Callable, Union, Awaitable
+from typing import Dict, List, Optional, Callable, Union, Awaitable, Any
 from decimal import Decimal
 import websockets
 import aiohttp
@@ -37,13 +37,13 @@ class OkxMarketData(MarketDataBase):
 
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
-        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT
+        self._orderbook_depth_limit: int = config.ORDERBOOK_DEPTH_LIMIT
 
         # 根据市场类型选择对应的symbol转换适配器
-        self._symbol_adapter = f"okx_{self._market_type}"
+        self._symbol_adapter: str = f"okx_{self._market_type}"
 
         # 用于WebSocket请求的唯一ID
-        self._next_request_id = 1
+        self._next_request_id: int = 1
 
     def get_ws_url(self) -> str:
         """获取WebSocket URL

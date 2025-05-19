@@ -1,6 +1,6 @@
 import json
 import asyncio
-from typing import Dict, List, Optional, Callable, Union, Awaitable
+from typing import Dict, List, Optional, Callable, Union, Awaitable, Any
 from decimal import Decimal
 import websockets
 import aiohttp
@@ -34,13 +34,13 @@ class BinanceMarketData(MarketDataBase):
 
         assert market_type in ('spot', 'perp_usdt', 'perp_coin')
 
-        self._orderbook_depth_limit = config.ORDERBOOK_DEPTH_LIMIT[market_type]
-        self._orderbook_update_interval = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
+        self._orderbook_depth_limit: int = config.ORDERBOOK_DEPTH_LIMIT[market_type]
+        self._orderbook_update_interval: str = config.ORDERBOOK_UPDATE_INTERVAL[market_type]
 
-        self._rest_url = config.REST_URLS[market_type]
+        self._rest_url: str = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
-        self._next_request_id = 1  # WebSocket请求ID
-        self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
+        self._next_request_id: int = 1  # WebSocket请求ID
+        self._subscription_requests: Dict[int, Dict[str, Any]] = {}  # 存储订阅请求内容
 
     async def connect(self) -> None:
         """
