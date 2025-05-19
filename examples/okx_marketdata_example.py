@@ -22,10 +22,10 @@ async def orderbook_callback(orderbook: OrderBook) -> None:
     """
     print(f"\n订单簿更新 - {orderbook.symbol}")
     print("买单:")
-    for bid in list(orderbook.bids.values())[:5]:  # 只显示前5档
+    for bid in list(orderbook.bids.values())[:1]:  # 只显示前1档
         print(f"价格: {bid.price:>10.4f}, 数量: {bid.quantity:>10.4f}")
     print("卖单:")
-    for ask in list(orderbook.asks.values())[:5]:  # 只显示前5档
+    for ask in list(orderbook.asks.values())[:1]:  # 只显示前1档
         print(f"价格: {ask.price:>10.4f}, 数量: {ask.quantity:>10.4f}")
 
 async def trade_callback(trade: Trade) -> None:
@@ -53,7 +53,7 @@ async def main():
     """
     # 创建配置对象
     config = OkxConfig()
-    
+
     # 创建OKX现货市场数据实例
     okx_spot_market_data = OkxMarketData(config, market_type=MarketType.SPOT)
     await okx_spot_market_data.connect()
@@ -63,14 +63,14 @@ async def main():
     # 创建OKX USDT本位永续合约市场数据实例
     okx_perp_usdt_market_data = OkxMarketData(config, market_type=MarketType.PERP_USDT)
     await okx_perp_usdt_market_data.connect()
-    okx_perp_usdt_market_data.subscribe_orderbook("BTC/USDT", orderbook_callback)
-    okx_perp_usdt_market_data.subscribe_trades("BTC/USDT", trade_callback)
+    okx_perp_usdt_market_data.subscribe_orderbook("BTC-USDT-PERP", orderbook_callback)
+    okx_perp_usdt_market_data.subscribe_trades("BTC-USDT-PERP", trade_callback)
 
     # 创建OKX币本位永续合约市场数据实例
     okx_perp_coin_market_data = OkxMarketData(config, market_type=MarketType.PERP_COIN)
     await okx_perp_coin_market_data.connect()
-    okx_perp_coin_market_data.subscribe_orderbook("BTC/USDT", orderbook_callback)
-    okx_perp_coin_market_data.subscribe_trades("BTC/USDT", trade_callback)
+    okx_perp_coin_market_data.subscribe_orderbook("BTC-USD-PERP", orderbook_callback)
+    okx_perp_coin_market_data.subscribe_trades("BTC-USD-PERP", trade_callback)
 
     # 创建事件来通知程序退出
     stop_event = asyncio.Event()
@@ -104,4 +104,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         # 忽略KeyboardInterrupt异常，因为我们已经处理了SIGINT信号
-        pass 
+        pass

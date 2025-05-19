@@ -25,11 +25,11 @@ def from_exchange(symbol: str, exchange: str) -> str:
 
 # BinanceSpot适配器
 
-def _binance_to_exchange(symbol: str) -> str:
+def _binance_spot_to_exchange(symbol: str) -> str:
     # BTC/USDT -> BTCUSDT
     return symbol.replace("/", "").upper()
 
-def _binance_from_exchange(symbol: str) -> str:
+def _binance_spot_from_exchange(symbol: str) -> str:
     # BTCUSDT -> BTC/USDT，按常见计价币种结尾截取
     symbol = symbol.upper()
     for quote in _QUOTE_ASSETS:
@@ -39,7 +39,7 @@ def _binance_from_exchange(symbol: str) -> str:
     # fallback: 不识别则原样返回
     return symbol
 
-register_symbol_adapter("binance_spot", _binance_to_exchange, _binance_from_exchange)
+register_symbol_adapter("binance_spot", _binance_spot_to_exchange, _binance_spot_from_exchange)
 
 # BinancePerp适配器（USDT本位和币本位）
 
@@ -80,37 +80,37 @@ register_symbol_adapter("binance_perp_coin", _binance_perp_coin_to_exchange, _bi
 # OKX适配器
 
 def _okx_spot_to_exchange(symbol: str) -> str:
-    return symbol
+    return symbol.replace("/", "-").upper()
 
 def _okx_spot_from_exchange(symbol: str) -> str:
-    return symbol
+    return symbol.replace("-", "/").upper()
 
 register_symbol_adapter("okx_spot", _okx_spot_to_exchange, _okx_spot_from_exchange)
 
 def _okx_perp_usdt_to_exchange(symbol: str) -> str:
-    # BTC-USDT-PERP -> BTC-USDT_PERP
+    # BTC-USDT-PERP -> BTC-USDT-SWAP
     if symbol.endswith("-USDT-PERP"):
-        return symbol[:-5] + "_" + symbol[-4:]
+        return symbol[:-4] + "SWAP"  # 比replace()更高效的内存操作
     return symbol
 
 def _okx_perp_usdt_from_exchange(symbol: str) -> str:
-    # BTC-USDT_PERP -> BTC-USDT-PERP
-    if symbol.endswith("-USDT_PERP"):
-        return symbol[:-5] + "-" + symbol[-4:]
+    # BTC-USDT-SWAP -> BTC-USDT-PERP
+    if symbol.endswith("-USDT-SWAP"):
+        return symbol[:-4] + "PERP"
     return symbol
 
 register_symbol_adapter("okx_perp_usdt", _okx_perp_usdt_to_exchange, _okx_perp_usdt_from_exchange)
 
 def _okx_perp_coin_to_exchange(symbol: str) -> str:
-    # BTC-USD-PERP -> BTCUSD_PERP
+    # BTC-USD-PERP -> BTC-USD_BTC-USD-SWAP
     if symbol.endswith("-USD-PERP"):
-        return symbol.replace("-USD-PERP", "USD_PERP")
+        return symbol[:-4] + "SWAP"  # 比replace()更高效的内存操作
     return symbol
 
 def _okx_perp_coin_from_exchange(symbol: str) -> str:
-    # BTCUSD_PERP -> BTC-USD-PERP
-    if symbol.endswith("USD_PERP"):
-        return symbol.replace("USD_PERP", "-USD-PERP")
+    # BTC-USD-SWAP -> BTC-USD-PERP
+    if symbol.endswith("-USD-SWAP"):
+        return symbol[:-4] + "PERP"
     return symbol
 
 register_symbol_adapter("okx_perp_coin", _okx_perp_coin_to_exchange, _okx_perp_coin_from_exchange)

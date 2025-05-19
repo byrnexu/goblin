@@ -7,7 +7,7 @@ from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.websocket_manager import WebSocketManager
 from .event_manager import EventManager
-from .types import OrderBook, OrderBookLevel, Trade, MarketType
+from .types import OrderBook, OrderBookLevel, Trade, Market, MarketType
 
 @dataclass
 class OrderBookLevel:
@@ -66,9 +66,11 @@ class MarketDataBase(ABC):
         # 使用事件管理器管理回调
         self._orderbook_manager: EventManager[OrderBook] = EventManager()
         self._trade_manager: EventManager[Trade] = EventManager()
-        
+
         # 存储交易所配置
         self._config: Any = config
+        # 市场
+        self._market: Market = config.MARKET
         # 市场类型
         self._market_type: MarketType = market_type
         # 日志记录器
@@ -101,7 +103,7 @@ class MarketDataBase(ABC):
         获取当前合约类型对应的symbol适配器名
         :return: 'binance_perp_usdt' 或 'binance_perp_coin' 或 'binance_spot'
         """
-        return f"binance_{self._market_type.value}"
+        return f"{self._market.value}_{self._market_type.value}"
 
     @abstractmethod
     async def _handle_messages(self, data: dict) -> None:
@@ -198,7 +200,7 @@ class MarketDataBase(ABC):
 
     def get_all_orderbook_subscribed_symbols(self) -> List[str]:
         """获取所有已订阅订单簿的交易对
-        
+
         Returns:
             List[str]: 已订阅订单簿的交易对列表
         """
@@ -206,7 +208,7 @@ class MarketDataBase(ABC):
 
     def get_all_trade_subscribed_symbols(self) -> List[str]:
         """获取所有已订阅成交的交易对
-        
+
         Returns:
             List[str]: 已订阅成交的交易对列表
         """
@@ -220,7 +222,7 @@ class MarketDataBase(ABC):
     async def _handle_reconnect(self) -> None:
         """
         WebSocket重连后的处理函数
-        
+
         默认实现会：
         1. 清空订单簿快照缓存
         2. 重新订阅所有交易对

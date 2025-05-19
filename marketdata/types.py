@@ -16,9 +16,13 @@ from typing import Dict, Any
 from enum import Enum
 from sortedcontainers import SortedDict
 
+class Market(Enum):
+    BINANCE = "binance"
+    OKX = "okx"
+
 class MarketType(Enum):
     """市场类型枚举
-    
+
     定义了支持的市场类型：
     - SPOT: 现货市场
     - PERP_USDT: USDT本位永续合约
@@ -89,4 +93,4 @@ class Trade:
     quantity: Decimal  # 成交数量
     side: str  # 成交方向：'buy'表示买方成交，'sell'表示卖方成交
     timestamp: int  # 毫秒时间戳，表示成交时间
-    trade_id: str  # 成交ID，用于唯一标识一笔成交 
+    trade_id: str  # 成交ID，用于唯一标识一笔成交

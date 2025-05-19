@@ -82,7 +82,7 @@ class BinanceMarketData(MarketDataBase):
         4. 设置请求ID计数器
         """
         super().__init__(config, market_type)
-        self.logger.info(f"初始化币安{market_type.value}市场数据服务...")
+        self.logger.info(f"初始化币安市场数据服务 market {market_type.value} ...")
 
         # 设置订单簿深度限制和更新间隔
         self._orderbook_depth_limit: int = config.ORDERBOOK_DEPTH_LIMIT[market_type]
