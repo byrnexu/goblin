@@ -39,17 +39,12 @@ class BinanceMarketData(MarketDataBase):
 
         self._rest_url = config.REST_URLS[market_type]
         self._session: Optional[aiohttp.ClientSession] = None  # HTTP会话对象
+
         self._running = False
+
         self._next_request_id = 1  # WebSocket请求ID
         self._subscription_requests: Dict[int, dict] = {}  # 存储订阅请求内容
 
-
-    def _symbol_adapter(self):
-        """
-        获取当前合约类型对应的symbol适配器名
-        :return: 'binance_perp_usdt' 或 'binance_perp_coin' 或 'binance_spot'
-        """
-        return f"binance_{self._market_type}"
 
     async def connect(self) -> None:
         """

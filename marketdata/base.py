@@ -93,6 +93,13 @@ class MarketDataBase(ABC):
         """
         return self._config.WS_URLS[self._market_type]
 
+    def _symbol_adapter(self):
+        """
+        获取当前合约类型对应的symbol适配器名
+        :return: 'binance_perp_usdt' 或 'binance_perp_coin' 或 'binance_spot'
+        """
+        return f"binance_{self._market_type}"
+
     @abstractmethod
     async def _handle_messages(self, data: dict) -> None:
         """处理WebSocket消息
