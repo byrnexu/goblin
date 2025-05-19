@@ -181,23 +181,19 @@ class BinanceMarketData(MarketDataBase):
         system_symbol = from_exchange(data['s'], self._symbol_adapter())
         self.logger.debug(f"处理{system_symbol}的订单簿更新...")
 
-        # 如果没有快照，先获取快照
+        # 如果没有快照，先获取快照，确保U比快照中的lastUpdateId更小(就是快照比data更加新)
         if system_symbol not in self._orderbook_snapshot_cache:
             self.logger.info(f"{system_symbol}没有订单簿快照，开始同步...")
             if not await self._ensure_last_update_id_is_greater_than_U(system_symbol, data):
                 self.logger.error(f"为{system_symbol}同步初始订单簿快照失败或操作被中断，放弃处理当前消息")
                 return
 
-        # 获取更新序号
-        u_in_last_orderbook_update = data['u']
-        last_update_id_in_snapshot = self._orderbook_snapshot_cache[system_symbol].aux_data['lastUpdateId']
-
-        # 验证更新序号
+        # 确保u比快照中的lastUpdaetId更大
         if self._u_is_less_than_last_update_id(system_symbol, data):
+            u_in_last_orderbook_update = data['u']
+            last_update_id_in_snapshot = self._orderbook_snapshot_cache[system_symbol].aux_data['lastUpdateId']
             self.logger.info(f"增量订单簿中最后的更新({system_symbol}, u={u_in_last_orderbook_update})早于快照(lastUpdateId={last_update_id_in_snapshot})，清空{system_symbol}的增量订单簿并跳过当前消息")
             return
-        else:
-            self.logger.debug(f"增量订单簿中最后的更新({system_symbol}, u={u_in_last_orderbook_update})晚于快照(lastUpdateId={last_update_id_in_snapshot})，开始合并{system_symbol}的增量订单簿")
 
         # 合并更新并通知
         self._merge_orderbook_update_to_snapshot(system_symbol, data)
@@ -327,7 +323,6 @@ class BinanceMarketData(MarketDataBase):
         3. 解析响应数据
         4. 创建订单簿对象
         5. 更新本地缓存
-        6. 通知订阅者
 
         Note:
             - 如果HTTP会话不存在，会记录警告并返回
@@ -364,7 +359,6 @@ class BinanceMarketData(MarketDataBase):
                         orderbook.asks[price] = OrderBookLevel(price, quantity)
                     self._orderbook_snapshot_cache[symbol] = orderbook
                     self.logger.info(f"成功获取{symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
-                    await self._notify_orderbook(orderbook)
                 else:
                     self.logger.error(f"获取{symbol}订单簿快照失败，HTTP状态码: {response.status}")
         except Exception as e:
