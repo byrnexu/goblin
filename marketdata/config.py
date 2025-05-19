@@ -26,11 +26,6 @@ class BinanceConfig(BaseConfig):
         MarketType.PERP_USDT: "500ms", # 100ms 250ms 500ms
         MarketType.PERP_COIN: "500ms"  # 100ms 250ms 500ms
     }
-    EVENT_TYPE_TRADE: Dict[MarketType, str] = {
-        MarketType.SPOT: "trade",
-        MarketType.PERP_USDT: "aggTrade",
-        MarketType.PERP_COIN: "aggTrade"
-    }
 
 class OkxConfig(BaseConfig):
     WS_URL: str = "wss://ws.okx.com:8443/ws/v5/business"

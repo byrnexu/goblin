@@ -151,7 +151,7 @@ class BinanceMarketData(MarketDataBase):
         elif 'e' in data and data['e'] == 'depthUpdate':
             self.logger.debug(f"收到订单簿更新消息: {data['s']}")
             await self._handle_orderbook_update(data)
-        elif 'e' in data and data['e'] == self._config.EVENT_TYPE_TRADE[self._market_type]:
+        elif 'e' in data and data['e'] == ('trade' if self._market_type == MarketType.SPOT else 'aggTrade'):
             self.logger.debug(f"收到成交消息: {data['s']}")
             await self._handle_trade(data)
 
@@ -412,7 +412,7 @@ class BinanceMarketData(MarketDataBase):
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             subscribe_msg = {
                 "method": "SUBSCRIBE",
-                "params": [f"{exchange_symbol.lower()}@{self._config.EVENT_TYPE_TRADE[self._market_type]}"],
+                "params": [f"{exchange_symbol.lower()}@{'trade' if self._market_type == MarketType.SPOT else 'aggTrade'}"],
                 "id": self._next_request_id
             }
             self._subscription_requests[self._next_request_id] = subscribe_msg
