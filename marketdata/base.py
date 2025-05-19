@@ -77,6 +77,8 @@ class MarketDataBase(ABC):
         # 创建WebSocket管理器
         self._ws_manager = WebSocketManager(self.get_ws_url(), self.logger)
         self._ws_manager.set_message_handler(self._handle_messages)
+        # 设置重连回调
+        self._ws_manager.on_reconnect = self._handle_reconnect
         self.logger.info(f"市场数据服务初始化完成")
         # 存储每个交易对的订单簿快照
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
@@ -230,3 +232,18 @@ class MarketDataBase(ABC):
         for symbol in self.get_all_trade_subscribed_symbols():
             for callback in self._trade_callbacks[symbol]:
                 self.subscribe_trades(symbol, callback)
+
+    async def _handle_reconnect(self) -> None:
+        """
+        WebSocket重连后的处理函数
+        
+        默认实现会：
+        1. 清空订单簿快照缓存
+        2. 重新订阅所有交易对
+        """
+        self.logger.info("WebSocket重连成功，开始重新订阅...")
+        # 清空订单簿快照缓存
+        self._orderbook_snapshot_cache.clear()
+        # 重新订阅所有交易对
+        self.resubscribe_all()
+        self.logger.info("重新订阅完成")

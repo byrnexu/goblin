@@ -48,9 +48,10 @@ class BinanceMarketData(MarketDataBase):
         """
         self.logger.info("开始建立市场数据连接...")
         self._session = aiohttp.ClientSession()
-        self._running = True
+
         await self._ws_manager.connect()
-        self.resubscribe_all()
+
+        self._running = True
         self.logger.info("市场数据连接建立完成")
 
     async def disconnect(self) -> None:
@@ -256,12 +257,6 @@ class BinanceMarketData(MarketDataBase):
             else:
                 orderbook.asks[price] = OrderBookLevel(price, quantity)
         orderbook.timestamp = data['E']
-
-    def resubscribe_all(self):
-        self.logger.info("开始重新订阅所有交易对...")
-        self._orderbook_snapshot_cache.clear()
-        super().resubscribe_all()
-        self.logger.info("重新订阅完成")
 
     def _handle_subscription_event(self, data: dict) -> None:
         request_id = data.get('id')
