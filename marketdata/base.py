@@ -168,7 +168,7 @@ class MarketDataBase(ABC):
         self.logger.info("市场数据连接已断开")
 
     @abstractmethod
-    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
+    async def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
         构建订单簿订阅消息
         
@@ -181,7 +181,7 @@ class MarketDataBase(ABC):
         pass
 
     @abstractmethod
-    def _build_trade_subscription_message(self, symbol: str) -> dict:
+    async def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
         构建成交订阅消息
         
@@ -210,7 +210,7 @@ class MarketDataBase(ABC):
         Args:
             symbol: 交易对符号
         """
-        subscribe_msg = self._build_orderbook_subscription_message(symbol)
+        subscribe_msg = await self._build_orderbook_subscription_message(symbol)
         await self._send_subscription_message(subscribe_msg)
 
     async def _send_trade_subscription(self, symbol: str) -> None:
@@ -220,7 +220,7 @@ class MarketDataBase(ABC):
         Args:
             symbol: 交易对符号
         """
-        subscribe_msg = self._build_trade_subscription_message(symbol)
+        subscribe_msg = await self._build_trade_subscription_message(symbol)
         await self._send_subscription_message(subscribe_msg)
 
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:

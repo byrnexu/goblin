@@ -95,7 +95,7 @@ class BinanceMarketData(MarketDataBase):
         # 存储订阅请求内容，用于打印订阅结果
         self._subscription_requests: Dict[int, Dict[str, Any]] = {}
 
-    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
+    async def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
         构建订单簿订阅消息
 
@@ -105,7 +105,7 @@ class BinanceMarketData(MarketDataBase):
         Returns:
             dict: 订阅消息内容
         """
-        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        exchange_symbol = await to_exchange(symbol, self._symbol_adapter())
         subscribe_msg = {
             "method": "SUBSCRIBE",
             "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
@@ -114,7 +114,7 @@ class BinanceMarketData(MarketDataBase):
         self._next_request_id += 1
         return subscribe_msg
 
-    def _build_trade_subscription_message(self, symbol: str) -> dict:
+    async def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
         构建成交订阅消息
 
@@ -124,7 +124,7 @@ class BinanceMarketData(MarketDataBase):
         Returns:
             dict: 订阅消息内容
         """
-        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        exchange_symbol = await to_exchange(symbol, self._symbol_adapter())
         subscribe_msg = {
             "method": "SUBSCRIBE",
             "params": [f"{exchange_symbol.lower()}@{'trade' if self._market_type == MarketType.SPOT else 'aggTrade'}"],
@@ -174,7 +174,7 @@ class BinanceMarketData(MarketDataBase):
                 - b: 买单更新
                 - a: 卖单更新
         """
-        system_symbol = from_exchange(data['s'], self._symbol_adapter())
+        system_symbol = await from_exchange(data['s'], self._symbol_adapter())
         self.logger.debug(f"处理{system_symbol}的订单簿更新...")
 
         # 如果没有快照，先获取快照，确保U比快照中的lastUpdateId更小(就是快照比data更加新)
@@ -202,35 +202,32 @@ class BinanceMarketData(MarketDataBase):
 
         处理流程：
         1. 转换交易对符号
-        2. 获取成交ID
-        3. 创建成交对象
-        4. 通知订阅者
+        2. 创建成交对象
+        3. 通知订阅者
 
         Args:
             data: 成交数据，包含：
                 - s: 交易对
-                - t: 成交ID（现货）
-                - a: 成交ID（合约）
                 - p: 成交价格
                 - q: 成交数量
-                - m: 是否是买方成交
-                - E: 事件时间
+                - T: 成交时间
+                - m: 是否是买方发起的成交
         """
-        system_symbol = from_exchange(data['s'], self._symbol_adapter())
-        trade_id = str(data['t'] if self._market_type == MarketType.SPOT else data['a'])
-        self.logger.debug(f"处理{system_symbol}的成交消息，成交ID: {trade_id}")
+        system_symbol = await from_exchange(data['s'], self._symbol_adapter())
+        self.logger.debug(f"处理{system_symbol}的成交消息...")
 
         # 创建成交对象
         trade = Trade(
             symbol=system_symbol,
-            price=Decimal(data['p']),
-            quantity=Decimal(data['q']),
-            side='sell' if data['m'] else 'buy',
-            timestamp=data['E'],
-            trade_id=trade_id
+            price=Decimal(str(data['p'])),
+            quantity=Decimal(str(data['q'])),
+            side='sell' if data.get('m', False) else 'buy',  # m=True 表示买方是挂单方，即卖方成交
+            timestamp=data['T'],
+            trade_id=str(data.get('t', data.get('a', '')))  # 现货用t，合约用a
         )
+
+        # 通知订阅者
         await self._notify_trade(trade)
-        self.logger.debug(f"已处理{system_symbol}的成交消息，价格: {trade.price}, 数量: {trade.quantity}, 方向: {trade.side}")
 
     def _u_is_less_than_last_update_id(self, symbol: str, data: dict) -> bool:
         """
@@ -332,7 +329,7 @@ class BinanceMarketData(MarketDataBase):
         try:
             url = f"{self._rest_url}/depth"
             params = {
-                "symbol": to_exchange(symbol, self._symbol_adapter()),
+                "symbol": await to_exchange(symbol, self._symbol_adapter()),
                 "limit": self._orderbook_depth_limit
             }
             async with self._session.get(url, params=params) as response:

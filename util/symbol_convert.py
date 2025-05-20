@@ -15,20 +15,21 @@
 - okx_perp_coin:   BTC-USD-PERP <-> BTC-USD-SWAP
 
 用法：
-    to_exchange(symbol: str, exchange: str) -> str
-    from_exchange(symbol: str, exchange: str) -> str
+    await to_exchange(symbol: str, exchange: str) -> str
+    await from_exchange(symbol: str, exchange: str) -> str
 
 可通过自定义装饰器 @symbol_adapter 注册新交易所适配器。
 """
-from typing import Callable, Dict
+from typing import Callable, Dict, Awaitable
 from functools import wraps
+import asyncio
 
 # 常见计价币种，按长度降序排列，避免如USDT/USDT等误判
 _QUOTE_ASSETS = [
     "USDT", "BUSD", "USDC", "TUSD", "USDP", "DAI", "EUR", "BTC", "ETH", "BNB", "TRY", "RUB", "BRL", "AUD", "GBP", "UAH", "IDRT", "BIDR", "VAI", "NGN", "ZAR", "PLN", "RON", "UAH", "TRX", "XRP", "DOGE", "SHIB"
 ]
 
-_symbol_adapters: Dict[str, Dict[str, Callable[[str], str]]] = {}
+_symbol_adapters: Dict[str, Dict[str, Callable[[str], Awaitable[str]]]] = {}
 
 def symbol_adapter(exchange: str):
     """
@@ -38,14 +39,14 @@ def symbol_adapter(exchange: str):
         exchange: 交易所名称，如 'binance_spot', 'okx_spot' 等
     Example:
         @symbol_adapter('binance_spot')
-        def binance_spot_adapter(symbol: str) -> tuple[str, str]:
+        def binance_spot_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
             # 返回 (to_exchange, from_exchange) 函数
             return (
                 lambda s: s.replace("/", "").upper(),
                 lambda s: _split_symbol_by_quote(s.upper())
             )
     """
-    def decorator(func: Callable[[str], tuple[Callable[[str], str], Callable[[str], str]]]):
+    def decorator(func: Callable[[str], tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]]):
         @wraps(func)
         def wrapper(*args, **kwargs):
             to_exchange_func, from_exchange_func = func(*args, **kwargs)
@@ -70,7 +71,7 @@ def _split_symbol_by_quote(symbol: str) -> str:
             return f"{base}/{quote}"
     return symbol
 
-def to_exchange(symbol: str, exchange: str) -> str:
+async def to_exchange(symbol: str, exchange: str) -> str:
     """
     系统格式 -> 交易所格式
     
@@ -84,11 +85,11 @@ def to_exchange(symbol: str, exchange: str) -> str:
     """
     try:
         adapter = _symbol_adapters[exchange.lower()]["to_exchange"]
-        return adapter(symbol)
+        return await adapter(symbol)
     except KeyError:
         raise ValueError(f"未找到交易所 {exchange} 的符号适配器")
 
-def from_exchange(symbol: str, exchange: str) -> str:
+async def from_exchange(symbol: str, exchange: str) -> str:
     """
     交易所格式 -> 系统格式
     
@@ -102,82 +103,100 @@ def from_exchange(symbol: str, exchange: str) -> str:
     """
     try:
         adapter = _symbol_adapters[exchange.lower()]["from_exchange"]
-        return adapter(symbol)
+        return await adapter(symbol)
     except KeyError:
         raise ValueError(f"未找到交易所 {exchange} 的符号适配器")
 
 # ======================== 适配器实现 ========================
 
 @symbol_adapter('binance_spot')
-def binance_spot_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def binance_spot_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     Binance 现货
     系统格式:    BTC/USDT
     交易所格式:  BTCUSDT
     """
-    return (
-        lambda s: s.replace("/", "").upper(),
-        lambda s: _split_symbol_by_quote(s.upper())
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s.replace("/", "").upper()
+    
+    async def from_exchange_func(s: str) -> str:
+        return _split_symbol_by_quote(s.upper())
+    
+    return to_exchange_func, from_exchange_func
 
 @symbol_adapter('binance_perp_usdt')
-def binance_perp_usdt_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def binance_perp_usdt_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     Binance USDT本位永续合约
     系统格式:    BTC-USDT-PERP
     交易所格式:  BTCUSDT
     """
-    return (
-        lambda s: s[:-10] + "USDT" if s.endswith("-USDT-PERP") else s,
-        lambda s: s[:-4] + "-USDT-PERP" if s.endswith("USDT") else s
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s[:-10] + "USDT" if s.endswith("-USDT-PERP") else s
+    
+    async def from_exchange_func(s: str) -> str:
+        return s[:-4] + "-USDT-PERP" if s.endswith("USDT") else s
+    
+    return to_exchange_func, from_exchange_func
 
 @symbol_adapter('binance_perp_coin')
-def binance_perp_coin_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def binance_perp_coin_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     Binance 币本位永续合约
     系统格式:    BTC-USD-PERP
     交易所格式:  BTCUSD_PERP
     """
-    return (
-        lambda s: s[:-9] + "USD_PERP" if s.endswith("-USD-PERP") else s,
-        lambda s: s[:-8] + "-USD-PERP" if s.endswith("USD_PERP") else s
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s[:-9] + "USD_PERP" if s.endswith("-USD-PERP") else s
+    
+    async def from_exchange_func(s: str) -> str:
+        return s[:-8] + "-USD-PERP" if s.endswith("USD_PERP") else s
+    
+    return to_exchange_func, from_exchange_func
 
 @symbol_adapter('okx_spot')
-def okx_spot_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def okx_spot_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     OKX 现货
     系统格式:    BTC/USDT
     交易所格式:  BTC-USDT
     """
-    return (
-        lambda s: s.replace("/", "-").upper(),
-        lambda s: s.replace("-", "/").upper()
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s.replace("/", "-").upper()
+    
+    async def from_exchange_func(s: str) -> str:
+        return s.replace("-", "/").upper()
+    
+    return to_exchange_func, from_exchange_func
 
 @symbol_adapter('okx_perp_usdt')
-def okx_perp_usdt_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def okx_perp_usdt_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     OKX USDT本位永续合约
     系统格式:    BTC-USDT-PERP
     交易所格式:  BTC-USDT-SWAP
     """
-    return (
-        lambda s: s[:-4] + "SWAP" if s.endswith("-USDT-PERP") else s,
-        lambda s: s[:-4] + "PERP" if s.endswith("-USDT-SWAP") else s
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s[:-4] + "SWAP" if s.endswith("-USDT-PERP") else s
+    
+    async def from_exchange_func(s: str) -> str:
+        return s[:-4] + "PERP" if s.endswith("-USDT-SWAP") else s
+    
+    return to_exchange_func, from_exchange_func
 
 @symbol_adapter('okx_perp_coin')
-def okx_perp_coin_adapter(symbol: str) -> tuple[Callable[[str], str], Callable[[str], str]]:
+def okx_perp_coin_adapter(symbol: str) -> tuple[Callable[[str], Awaitable[str]], Callable[[str], Awaitable[str]]]:
     """
     OKX 币本位永续合约
     系统格式:    BTC-USD-PERP
     交易所格式:  BTC-USD-SWAP
     """
-    return (
-        lambda s: s[:-4] + "SWAP" if s.endswith("-USD-PERP") else s,
-        lambda s: s[:-4] + "PERP" if s.endswith("-USD-SWAP") else s
-    )
+    async def to_exchange_func(s: str) -> str:
+        return s[:-4] + "SWAP" if s.endswith("-USD-PERP") else s
+    
+    async def from_exchange_func(s: str) -> str:
+        return s[:-4] + "PERP" if s.endswith("-USD-SWAP") else s
+    
+    return to_exchange_func, from_exchange_func
 
 # 其他交易所可继续注册

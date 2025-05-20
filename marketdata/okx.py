@@ -111,7 +111,7 @@ class OkxMarketData(MarketDataBase):
             self.logger.info(f"收到成交消息: {data['arg']['instId']}")
             await self._handle_trade(data)
 
-    def _create_orderbook_from_data(self, data: dict) -> OrderBook:
+    async def _create_orderbook_from_data(self, data: dict) -> OrderBook:
         """
         根据OKX订单簿数据创建OrderBook对象
 
@@ -129,7 +129,7 @@ class OkxMarketData(MarketDataBase):
         """
         # 获取交易对符号
         exchange_symbol = data['arg']['instId']
-        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+        system_symbol = await from_exchange(exchange_symbol, self._symbol_adapter())
 
         # 获取订单簿数据
         orderbook_data = data['data'][0]
@@ -206,11 +206,11 @@ class OkxMarketData(MarketDataBase):
         """
         # 获取交易对符号
         exchange_symbol = data['arg']['instId']
-        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+        system_symbol = await from_exchange(exchange_symbol, self._symbol_adapter())
         self.logger.debug(f"处理{system_symbol}的订单簿更新，action: {data['action']}")
 
         # 创建订单簿对象
-        orderbook = self._create_orderbook_from_data(data)
+        orderbook = await self._create_orderbook_from_data(data)
 
         if data['action'] == 'snapshot':
             # 如果是快照，直接保存
@@ -242,7 +242,7 @@ class OkxMarketData(MarketDataBase):
             data: 订单簿快照数据
         """
         # 创建订单簿对象
-        orderbook = self._create_orderbook_from_data(data)
+        orderbook = await self._create_orderbook_from_data(data)
         self.logger.info(f"{orderbook.symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
 
         # 通知订阅者
@@ -271,7 +271,7 @@ class OkxMarketData(MarketDataBase):
         """
         # 获取交易对符号
         exchange_symbol = data['arg']['instId']
-        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+        system_symbol = await from_exchange(exchange_symbol, self._symbol_adapter())
 
         # 获取成交数据
         trade_data = data['data'][0]
@@ -291,17 +291,17 @@ class OkxMarketData(MarketDataBase):
         # 通知订阅者
         await self._notify_trade(trade)
 
-    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
+    async def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
         构建订单簿订阅消息
-        
+
         Args:
             symbol: 交易对符号
-            
+
         Returns:
             dict: 订阅消息内容
         """
-        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        exchange_symbol = await to_exchange(symbol, self._symbol_adapter())
         return {
             "op": "subscribe",
             "args": [{
@@ -313,17 +313,17 @@ class OkxMarketData(MarketDataBase):
             }]
         }
 
-    def _build_trade_subscription_message(self, symbol: str) -> dict:
+    async def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
         构建成交订阅消息
-        
+
         Args:
             symbol: 交易对符号
-            
+
         Returns:
             dict: 订阅消息内容
         """
-        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        exchange_symbol = await to_exchange(symbol, self._symbol_adapter())
         return {
             "op": "subscribe",
             "args": [{
