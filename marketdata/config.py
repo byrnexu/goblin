@@ -41,7 +41,7 @@ class OkxConfig(BaseConfig):
     # 400档：首次推400档快照数据，以后增量推送，每10毫秒推送一次变化的数据
     # okx系统后台单个连接、交易产品维度，深度频道的推送顺序固定为：1档 -> 400档 -> 5档
     ORDERBOOK_DEPTH_LIMIT: Dict[MarketType, int] = {
-        MarketType.SPOT: 400, # 1 5 400
-        MarketType.PERP_USDT: 1, # 1 5 400
+        MarketType.SPOT: 1, # 1 5 400
+        MarketType.PERP_USDT: 5, # 1 5 400
         MarketType.PERP_COIN: 400  # 1 5 400
     }
