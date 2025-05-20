@@ -32,13 +32,13 @@ from typing import Dict, List, Optional, Callable, Union, Awaitable, Any
 from decimal import Decimal
 import websockets
 import aiohttp
-from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade
+from .base import MarketDataBase, OrderBook, OrderBookLevel, Trade, MarketDataMessageHandler
 from .config import OkxConfig
 from .types import MarketType
 from sortedcontainers import SortedDict
 from util.logger import get_logger
 from util.symbol_convert import to_exchange, from_exchange
-from util.websocket_manager import WebSocketManager
+from util.websocket_manager import WebSocketManager, MessageHandler, ReconnectConfig, ConnectionConfig
 
 class OkxMarketData(MarketDataBase):
     """
@@ -338,7 +338,7 @@ class OkxMarketData(MarketDataBase):
         """
         self.logger.info(f"开始订阅{symbol}的订单簿数据...")
         super().subscribe_orderbook(symbol, callback)
-        if self._ws_manager._ws:
+        if self._ws_manager.is_connected:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             # 定义深度限制到频道名称的映射
             CHANNEL_MAPPING = { 1: "bbo-tbt", 5: "books5", 400: "books" }
@@ -374,7 +374,7 @@ class OkxMarketData(MarketDataBase):
         """
         self.logger.info(f"开始订阅{symbol}的成交数据...")
         super().subscribe_trades(symbol, callback)
-        if self._ws_manager._ws:
+        if self._ws_manager.is_connected:
             exchange_symbol = to_exchange(symbol, self._symbol_adapter())
             subscribe_msg = {
                 "op": "subscribe",

@@ -1,3 +1,13 @@
+"""
+市场数据基础接口模块
+
+本模块定义了市场数据订阅的基本接口，包括：
+1. 连接和断开连接
+2. 订阅和取消订阅订单簿数据
+3. 订阅和取消订阅成交数据
+4. 数据更新通知机制
+"""
+
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Union, Awaitable, Any
 from dataclasses import dataclass, field
@@ -5,7 +15,7 @@ from decimal import Decimal
 import asyncio
 from sortedcontainers import SortedDict
 from util.logger import get_logger
-from util.websocket_manager import WebSocketManager
+from util.websocket_manager import WebSocketManager, MessageHandler, ReconnectConfig, ConnectionConfig
 from .event_manager import EventManager
 from .types import OrderBook, OrderBookLevel, Trade, Market, MarketType
 
@@ -18,30 +28,21 @@ class OrderBookLevel:
     price: Decimal  # 价格
     quantity: Decimal  # 数量
 
-@dataclass
-class OrderBook:
-    """订单簿数据结构
-
-    包含交易对的完整订单簿信息，包括买单和卖单
+class MarketDataMessageHandler(MessageHandler):
+    """市场数据消息处理器
+    
+    负责处理WebSocket消息并更新本地状态
     """
-    symbol: str  # 交易对符号，例如 'BTCUSDT'
-    bids: SortedDict  # 价格降序
-    asks: SortedDict  # 价格升序
-    timestamp: int  # 毫秒时间戳，表示订单簿更新的时间
-    aux_data: Dict[str, Any] = field(default_factory=dict)  # 通用辅助数据字段
-
-@dataclass
-class Trade:
-    """成交数据结构
-
-    表示一笔成交记录
-    """
-    symbol: str  # 交易对符号
-    price: Decimal  # 成交价格
-    quantity: Decimal  # 成交数量
-    side: str  # 成交方向：'buy'表示买方成交，'sell'表示卖方成交
-    timestamp: int  # 毫秒时间戳，表示成交时间
-    trade_id: str  # 成交ID，用于唯一标识一笔成交
+    def __init__(self, market_data):
+        self._market_data = market_data
+        
+    async def handle(self, message: dict) -> None:
+        """处理WebSocket消息
+        
+        Args:
+            message: WebSocket消息数据
+        """
+        await self._market_data._handle_messages(message)
 
 class MarketDataBase(ABC):
     """市场数据基础接口类
@@ -75,11 +76,32 @@ class MarketDataBase(ABC):
         self._market_type: MarketType = market_type
         # 日志记录器
         self.logger = get_logger(f"{self.__class__.__name__}")
+        
         # 创建WebSocket管理器
-        self._ws_manager: WebSocketManager = WebSocketManager(self.get_ws_url(), self.logger)
-        self._ws_manager.set_message_handler(self._handle_messages)
+        reconnect_config = ReconnectConfig(
+            max_retries=5,
+            initial_interval=1.0,
+            max_interval=30.0,
+            backoff_factor=2.0
+        )
+        connection_config = ConnectionConfig(
+            timeout=30.0,
+            ping_interval=20.0,
+            ping_timeout=10.0,
+            close_timeout=10.0
+        )
+        self._ws_manager: WebSocketManager = WebSocketManager(
+            self.get_ws_url(),
+            reconnect_config=reconnect_config,
+            connection_config=connection_config,
+            logger=self.logger
+        )
+        
+        # 设置消息处理器
+        self._ws_manager.add_message_handler(MarketDataMessageHandler(self))
         # 设置重连回调
-        self._ws_manager.on_reconnect = self._handle_reconnect
+        self._ws_manager.add_reconnect_callback(self._handle_reconnect)
+        
         self.logger.info(f"市场数据服务初始化完成")
         # 存储每个交易对的订单簿快照
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
@@ -145,17 +167,6 @@ class MarketDataBase(ABC):
         """
         self._orderbook_manager.subscribe(symbol, callback)
 
-    def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
-        """订阅逐笔成交数据
-
-        当指定交易对有新的成交时，会调用提供的回调函数
-
-        Args:
-            symbol: 交易对符号，例如 'BTCUSDT'
-            callback: 成交数据回调函数，可以是同步或异步函数
-        """
-        self._trade_manager.subscribe(symbol, callback)
-
     def unsubscribe_orderbook(self, symbol: str, callback: Optional[Callable[[OrderBook], Union[None, Awaitable[None]]]] = None) -> None:
         """取消订阅订单簿数据
 
@@ -163,40 +174,31 @@ class MarketDataBase(ABC):
 
         Args:
             symbol: 交易对符号
-            callback: 要取消的回调函数，如果为None则取消该交易对的所有回调
+            callback: 要取消的回调函数，如果为None则取消所有回调
         """
         self._orderbook_manager.unsubscribe(symbol, callback)
 
+    def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
+        """订阅成交数据
+
+        当指定交易对有新的成交时，会调用提供的回调函数
+
+        Args:
+            symbol: 交易对符号
+            callback: 成交数据回调函数，可以是同步或异步函数
+        """
+        self._trade_manager.subscribe(symbol, callback)
+
     def unsubscribe_trades(self, symbol: str, callback: Optional[Callable[[Trade], Union[None, Awaitable[None]]]] = None) -> None:
-        """取消订阅逐笔成交数据
+        """取消订阅成交数据
 
         取消指定交易对的成交数据订阅
 
         Args:
             symbol: 交易对符号
-            callback: 要取消的回调函数，如果为None则取消该交易对的所有回调
+            callback: 要取消的回调函数，如果为None则取消所有回调
         """
         self._trade_manager.unsubscribe(symbol, callback)
-
-    async def _notify_orderbook(self, orderbook: OrderBook) -> None:
-        """通知订单簿数据更新
-
-        当订单簿数据更新时，调用所有注册的回调函数
-
-        Args:
-            orderbook: 更新后的订单簿数据
-        """
-        await self._orderbook_manager.notify(orderbook.symbol, orderbook)
-
-    async def _notify_trade(self, trade: Trade) -> None:
-        """通知成交数据更新
-
-        当有新的成交时，调用所有注册的回调函数
-
-        Args:
-            trade: 新的成交数据
-        """
-        await self._trade_manager.notify(trade.symbol, trade)
 
     def get_all_orderbook_subscribed_symbols(self) -> List[str]:
         """获取所有已订阅订单簿的交易对
@@ -233,3 +235,23 @@ class MarketDataBase(ABC):
         # 重新订阅所有交易对
         self.resubscribe_all()
         self.logger.info("重新订阅完成")
+
+    async def _notify_orderbook(self, orderbook: OrderBook) -> None:
+        """通知订单簿更新
+
+        将订单簿更新通知给所有订阅者
+
+        Args:
+            orderbook: 更新后的订单簿对象
+        """
+        await self._orderbook_manager.notify(orderbook.symbol, orderbook)
+
+    async def _notify_trade(self, trade: Trade) -> None:
+        """通知成交更新
+
+        将成交更新通知给所有订阅者
+
+        Args:
+            trade: 成交对象
+        """
+        await self._trade_manager.notify(trade.symbol, trade)
