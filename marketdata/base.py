@@ -176,49 +176,67 @@ class MarketDataBase(ABC):
             
         self.logger.info("市场数据连接已断开")
 
-    def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
-        """订阅订单簿数据
+    @abstractmethod
+    async def _send_orderbook_subscription(self, symbol: str) -> None:
+        """
+        发送订单簿订阅请求
+        
+        Args:
+            symbol: 交易对符号
+        """
+        pass
 
-        当指定交易对的订单簿数据更新时，会调用提供的回调函数
+    @abstractmethod
+    async def _send_trade_subscription(self, symbol: str) -> None:
+        """
+        发送成交订阅请求
+        
+        Args:
+            symbol: 交易对符号
+        """
+        pass
+
+    def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
+        """
+        订阅订单簿数据
+
+        订阅指定交易对的订单簿数据，包括：
+        1. 注册回调函数
+        2. 发送WebSocket订阅消息
 
         Args:
             symbol: 交易对符号，例如 'BTCUSDT'
             callback: 订单簿数据回调函数，可以是同步或异步函数
+
+        Note:
+            - 如果WebSocket未连接，只会注册回调函数
+            - 订阅消息会包含更新间隔设置
         """
+        self.logger.info(f"开始订阅{symbol}的订单簿数据...")
         self._orderbook_manager.subscribe(symbol, callback)
-
-    def unsubscribe_orderbook(self, symbol: str, callback: Optional[Callable[[OrderBook], Union[None, Awaitable[None]]]] = None) -> None:
-        """取消订阅订单簿数据
-
-        取消指定交易对的订单簿数据订阅
-
-        Args:
-            symbol: 交易对符号
-            callback: 要取消的回调函数，如果为None则取消所有回调
-        """
-        self._orderbook_manager.unsubscribe(symbol, callback)
+        if self._ws_manager.is_connected:
+            asyncio.create_task(self._send_orderbook_subscription(symbol))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
-        """订阅成交数据
+        """
+        订阅逐笔成交数据
 
-        当指定交易对有新的成交时，会调用提供的回调函数
+        订阅指定交易对的成交数据，包括：
+        1. 注册回调函数
+        2. 发送WebSocket订阅消息
 
         Args:
-            symbol: 交易对符号
+            symbol: 交易对符号，例如 'BTCUSDT'
             callback: 成交数据回调函数，可以是同步或异步函数
+
+        Note:
+            - 如果WebSocket未连接，只会注册回调函数
+            - 不同市场类型使用不同的事件类型
         """
+        self.logger.info(f"开始订阅{symbol}的成交数据...")
         self._trade_manager.subscribe(symbol, callback)
-
-    def unsubscribe_trades(self, symbol: str, callback: Optional[Callable[[Trade], Union[None, Awaitable[None]]]] = None) -> None:
-        """取消订阅成交数据
-
-        取消指定交易对的成交数据订阅
-
-        Args:
-            symbol: 交易对符号
-            callback: 要取消的回调函数，如果为None则取消所有回调
-        """
-        self._trade_manager.unsubscribe(symbol, callback)
+        if self._ws_manager.is_connected:
+            asyncio.create_task(self._send_trade_subscription(symbol))
 
     def get_all_orderbook_subscribed_symbols(self) -> List[str]:
         """获取所有已订阅订单簿的交易对
@@ -236,10 +254,26 @@ class MarketDataBase(ABC):
         """
         return self._trade_manager.get_subscribed_symbols()
 
-    def resubscribe_all(self) -> None:
-        """重新订阅所有已订阅的交易对数据"""
-        # 由于事件管理器已经保存了所有订阅信息，这里不需要做任何事情
-        pass
+    async def resubscribe_all(self) -> None:
+        """
+        重新订阅所有已订阅的交易对
+        
+        在WebSocket重连后调用，重新发送所有订阅请求。
+        使用当前已订阅的交易对信息，而不是存储的旧请求。
+        """
+        self.logger.info("开始重新订阅所有交易对...")
+        
+        # 重新订阅所有订单簿
+        for symbol in self._orderbook_manager.get_subscribed_symbols():
+            self.logger.info(f"重新订阅{symbol}的订单簿数据")
+            await self._send_orderbook_subscription(symbol)
+            
+        # 重新订阅所有成交
+        for symbol in self._trade_manager.get_subscribed_symbols():
+            self.logger.info(f"重新订阅{symbol}的成交数据")
+            await self._send_trade_subscription(symbol)
+            
+        self.logger.info("所有交易对重新订阅完成")
 
     async def _handle_reconnect(self) -> None:
         """
@@ -253,7 +287,7 @@ class MarketDataBase(ABC):
         # 清空订单簿快照缓存
         self._orderbook_snapshot_cache.clear()
         # 重新订阅所有交易对
-        self.resubscribe_all()
+        await self.resubscribe_all()
         self.logger.info("重新订阅完成")
 
     async def _notify_orderbook(self, orderbook: OrderBook) -> None:

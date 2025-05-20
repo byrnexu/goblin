@@ -67,6 +67,9 @@ class OkxMarketData(MarketDataBase):
     2. 转换为内部格式
     3. 通知订阅者
     """
+    # 定义深度限制到频道名称的映射
+    CHANNEL_MAPPING = { 1: "bbo-tbt", 5: "books5", 400: "books" }
+
     def __init__(self, config: OkxConfig = OkxConfig(), market_type: MarketType = MarketType.SPOT):
         """
         初始化市场数据对象
@@ -269,10 +272,10 @@ class OkxMarketData(MarketDataBase):
         # 获取交易对符号
         exchange_symbol = data['arg']['instId']
         system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
-        
+
         # 获取成交数据
         trade_data = data['data'][0]
-        
+
         # 创建成交对象
         trade = Trade(
             symbol=system_symbol,
@@ -282,77 +285,50 @@ class OkxMarketData(MarketDataBase):
             timestamp=int(trade_data['ts']),
             trade_id=trade_data['tradeId']
         )
-        
+
         self.logger.debug(f"处理{system_symbol}的成交消息，价格: {trade.price}, 数量: {trade.quantity}, 方向: {trade.side}")
-        
+
         # 通知订阅者
         await self._notify_trade(trade)
 
-    def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
+    async def _send_orderbook_subscription(self, symbol: str) -> None:
         """
-        订阅订单簿数据
-
-        订阅指定交易对的订单簿数据，包括：
-        1. 注册回调函数
-        2. 发送WebSocket订阅消息
+        发送订单簿订阅请求
 
         Args:
-            symbol: 交易对符号，例如 'BTCUSDT'
-            callback: 订单簿数据回调函数，可以是同步或异步函数
-
-        Note:
-            - 如果WebSocket未连接，只会注册回调函数
-            - 订阅消息会包含更新间隔设置
+            symbol: 交易对符号
         """
-        self.logger.info(f"开始订阅{symbol}的订单簿数据...")
-        super().subscribe_orderbook(symbol, callback)
-        if self._ws_manager.is_connected:
-            exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-            # 定义深度限制到频道名称的映射
-            CHANNEL_MAPPING = { 1: "bbo-tbt", 5: "books5", 400: "books" }
-            # 构建订阅消息
-            subscribe_msg = {
-                "op": "subscribe",
-                "args": [{
-                    "channel": CHANNEL_MAPPING.get(
-                        self._config.ORDERBOOK_DEPTH_LIMIT.get(self._market_type, 400),  # 默认值400
-                        "books"  # 万一中途添加了新的MarketType，提供默认频道
-                    ),
-                    "instId": exchange_symbol
-                }]
-            }
-            self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
-            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
+        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        subscribe_msg = {
+            "op": "subscribe",
+            "args": [{
+                "channel": self.CHANNEL_MAPPING.get(
+                    self._config.ORDERBOOK_DEPTH_LIMIT.get(self._market_type, 400),
+                    "books"
+                ),
+                "instId": exchange_symbol
+            }]
+        }
+        self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
+        await self._ws_manager.send_message(subscribe_msg)
 
-    def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
+    async def _send_trade_subscription(self, symbol: str) -> None:
         """
-        订阅逐笔成交数据
-
-        订阅指定交易对的成交数据，包括：
-        1. 注册回调函数
-        2. 发送WebSocket订阅消息
+        发送成交订阅请求
 
         Args:
-            symbol: 交易对符号，例如 'BTCUSDT'
-            callback: 成交数据回调函数，可以是同步或异步函数
-
-        Note:
-            - 如果WebSocket未连接，只会注册回调函数
-            - 不同市场类型使用不同的事件类型
+            symbol: 交易对符号
         """
-        self.logger.info(f"开始订阅{symbol}的成交数据...")
-        super().subscribe_trades(symbol, callback)
-        if self._ws_manager.is_connected:
-            exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-            subscribe_msg = {
-                "op": "subscribe",
-                "args": [{
-                    "channel": "trades",
-                    "instId": exchange_symbol
-                }]
-            }
-            self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
-            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
+        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        subscribe_msg = {
+            "op": "subscribe",
+            "args": [{
+                "channel": "trades",
+                "instId": exchange_symbol
+            }]
+        }
+        self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
+        await self._ws_manager.send_message(subscribe_msg)
 
     def _handle_subscription_event(self, data: dict) -> None:
         """

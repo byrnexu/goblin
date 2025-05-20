@@ -92,8 +92,44 @@ class BinanceMarketData(MarketDataBase):
         self._rest_url: str = config.REST_URLS[market_type]
         # WebSocket请求ID计数器
         self._next_request_id: int = 1
-        # 存储订阅请求内容，用于重连时重新订阅
+        # 存储订阅请求内容，用于打印订阅结果
         self._subscription_requests: Dict[int, Dict[str, Any]] = {}
+
+    async def _send_orderbook_subscription(self, symbol: str) -> None:
+        """
+        发送订单簿订阅请求
+
+        Args:
+            symbol: 交易对符号
+        """
+        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        subscribe_msg = {
+            "method": "SUBSCRIBE",
+            "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
+            "id": self._next_request_id
+        }
+        self._subscription_requests[self._next_request_id] = subscribe_msg
+        self._next_request_id += 1
+        self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
+        await self._ws_manager.send_message(subscribe_msg)
+
+    async def _send_trade_subscription(self, symbol: str) -> None:
+        """
+        发送成交订阅请求
+
+        Args:
+            symbol: 交易对符号
+        """
+        exchange_symbol = to_exchange(symbol, self._symbol_adapter())
+        subscribe_msg = {
+            "method": "SUBSCRIBE",
+            "params": [f"{exchange_symbol.lower()}@{'trade' if self._market_type == MarketType.SPOT else 'aggTrade'}"],
+            "id": self._next_request_id
+        }
+        self._subscription_requests[self._next_request_id] = subscribe_msg
+        self._next_request_id += 1
+        self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
+        await self._ws_manager.send_message(subscribe_msg)
 
     async def _handle_messages(self, data: dict) -> None:
         """
@@ -340,16 +376,7 @@ class BinanceMarketData(MarketDataBase):
         self.logger.info(f"开始订阅{symbol}的订单簿数据...")
         super().subscribe_orderbook(symbol, callback)
         if self._ws_manager.is_connected:
-            exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-            subscribe_msg = {
-                "method": "SUBSCRIBE",
-                "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
-                "id": self._next_request_id
-            }
-            self._subscription_requests[self._next_request_id] = subscribe_msg
-            self._next_request_id += 1
-            self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
-            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
+            asyncio.create_task(self._send_orderbook_subscription(symbol))
 
     def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
         """
@@ -370,16 +397,7 @@ class BinanceMarketData(MarketDataBase):
         self.logger.info(f"开始订阅{symbol}的成交数据...")
         super().subscribe_trades(symbol, callback)
         if self._ws_manager.is_connected:
-            exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-            subscribe_msg = {
-                "method": "SUBSCRIBE",
-                "params": [f"{exchange_symbol.lower()}@{'trade' if self._market_type == MarketType.SPOT else 'aggTrade'}"],
-                "id": self._next_request_id
-            }
-            self._subscription_requests[self._next_request_id] = subscribe_msg
-            self._next_request_id += 1
-            self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
-            asyncio.create_task(self._ws_manager.send_message(subscribe_msg))
+            asyncio.create_task(self._send_trade_subscription(symbol))
 
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
         """
@@ -441,15 +459,16 @@ class BinanceMarketData(MarketDataBase):
             - 错误响应中包含error字段
         """
         request_id = data.get('id')
-        if request_id is not None and request_id in self._subscription_requests:
-            request = self._subscription_requests[request_id]
-            if 'result' in data:
-                if data['result'] is None:
-                    self.logger.info(f"订阅成功: 请求ID={request_id}, 请求内容={request}")
-                else:
-                    self.logger.error(f"订阅失败: 请求ID={request_id}, 请求内容={request}, 结果={data['result']}")
-            elif 'error' in data:
-                code = data['error'].get('code', '')
-                msg = data['error'].get('msg', '')
-                self.logger.error(f"订阅错误: 请求ID={request_id}, 请求内容={request}, 错误码={code}, 错误信息={msg}")
-            del self._subscription_requests[request_id]
+        if request_id is not None:
+            if request_id in self._subscription_requests:
+                request = self._subscription_requests[request_id]
+                if 'result' in data:
+                    if data['result'] is None:
+                        self.logger.info(f"订阅成功: 请求ID={request_id}, 请求内容={request}")
+                    else:
+                        self.logger.error(f"订阅失败: 请求ID={request_id}, 请求内容={request}, 结果={data['result']}")
+                elif 'error' in data:
+                    code = data['error'].get('code', '')
+                    msg = data['error'].get('msg', '')
+                    self.logger.error(f"订阅错误: 请求ID={request_id}, 请求内容={request}, 错误码={code}, 错误信息={msg}")
+                del self._subscription_requests[request_id]
