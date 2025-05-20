@@ -20,26 +20,17 @@ from .event_manager import EventManager
 from .types import OrderBook, OrderBookLevel, Trade, Market, MarketType
 import aiohttp
 
-@dataclass
-class OrderBookLevel:
-    """订单簿价格档位
-
-    表示订单簿中的一个价格档位，包含价格和数量信息
-    """
-    price: Decimal  # 价格
-    quantity: Decimal  # 数量
-
 class MarketDataMessageHandler(MessageHandler):
     """市场数据消息处理器
-    
+
     负责处理WebSocket消息并更新本地状态
     """
     def __init__(self, market_data):
         self._market_data = market_data
-        
+
     async def handle(self, message: dict) -> None:
         """处理WebSocket消息
-        
+
         Args:
             message: WebSocket消息数据
         """
@@ -77,7 +68,7 @@ class MarketDataBase(ABC):
         self._market_type: MarketType = market_type
         # 日志记录器
         self.logger = get_logger(f"{self.__class__.__name__}")
-        
+
         # 创建WebSocket管理器
         self._ws_manager: WebSocketManager = WebSocketManager(
             self.get_ws_url(),
@@ -85,12 +76,12 @@ class MarketDataBase(ABC):
             connection_config=self._config.WS_CONNECTION_CONFIG,
             logger=self.logger
         )
-        
+
         # 设置消息处理器
         self._ws_manager.add_message_handler(MarketDataMessageHandler(self))
         # 设置重连回调
         self._ws_manager.add_reconnect_callback(self._handle_reconnect)
-        
+
         self.logger.info(f"市场数据服务初始化完成")
         # 存储每个交易对的订单簿快照
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
@@ -142,12 +133,12 @@ class MarketDataBase(ABC):
         子类可以重写此方法以添加额外的连接逻辑。
         """
         self.logger.info("开始建立市场数据连接...")
-        
+
         # 如果配置中包含REST_URLS，创建HTTP会话
         if hasattr(self._config, 'REST_URLS'):
             self._session = aiohttp.ClientSession()
             self.logger.info("已创建HTTP会话")
-            
+
         await self._ws_manager.connect()
         self._running = True
         self.logger.info("市场数据连接建立完成")
@@ -167,20 +158,20 @@ class MarketDataBase(ABC):
         self.logger.info("开始断开市场数据连接...")
         self._running = False
         await self._ws_manager.disconnect()
-        
+
         # 如果存在HTTP会话，关闭它
         if self._session:
             await self._session.close()
             self._session = None
             self.logger.info("已关闭HTTP会话")
-            
+
         self.logger.info("市场数据连接已断开")
 
     @abstractmethod
     async def _send_orderbook_subscription(self, symbol: str) -> None:
         """
         发送订单簿订阅请求
-        
+
         Args:
             symbol: 交易对符号
         """
@@ -190,7 +181,7 @@ class MarketDataBase(ABC):
     async def _send_trade_subscription(self, symbol: str) -> None:
         """
         发送成交订阅请求
-        
+
         Args:
             symbol: 交易对符号
         """
@@ -257,22 +248,22 @@ class MarketDataBase(ABC):
     async def resubscribe_all(self) -> None:
         """
         重新订阅所有已订阅的交易对
-        
+
         在WebSocket重连后调用，重新发送所有订阅请求。
         使用当前已订阅的交易对信息，而不是存储的旧请求。
         """
         self.logger.info("开始重新订阅所有交易对...")
-        
+
         # 重新订阅所有订单簿
         for symbol in self._orderbook_manager.get_subscribed_symbols():
             self.logger.info(f"重新订阅{symbol}的订单簿数据")
             await self._send_orderbook_subscription(symbol)
-            
+
         # 重新订阅所有成交
         for symbol in self._trade_manager.get_subscribed_symbols():
             self.logger.info(f"重新订阅{symbol}的成交数据")
             await self._send_trade_subscription(symbol)
-            
+
         self.logger.info("所有交易对重新订阅完成")
 
     async def _handle_reconnect(self) -> None:
