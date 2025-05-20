@@ -357,48 +357,6 @@ class BinanceMarketData(MarketDataBase):
         except Exception as e:
             self.logger.error(f"获取{symbol}订单簿快照时发生错误: {e}")
 
-    def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
-        """
-        订阅订单簿数据
-
-        订阅指定交易对的订单簿数据，包括：
-        1. 注册回调函数
-        2. 发送WebSocket订阅消息
-
-        Args:
-            symbol: 交易对符号，例如 'BTCUSDT'
-            callback: 订单簿数据回调函数，可以是同步或异步函数
-
-        Note:
-            - 如果WebSocket未连接，只会注册回调函数
-            - 订阅消息会包含更新间隔设置
-        """
-        self.logger.info(f"开始订阅{symbol}的订单簿数据...")
-        super().subscribe_orderbook(symbol, callback)
-        if self._ws_manager.is_connected:
-            asyncio.create_task(self._send_orderbook_subscription(symbol))
-
-    def subscribe_trades(self, symbol: str, callback: Callable[[Trade], Union[None, Awaitable[None]]]) -> None:
-        """
-        订阅逐笔成交数据
-
-        订阅指定交易对的成交数据，包括：
-        1. 注册回调函数
-        2. 发送WebSocket订阅消息
-
-        Args:
-            symbol: 交易对符号，例如 'BTCUSDT'
-            callback: 成交数据回调函数，可以是同步或异步函数
-
-        Note:
-            - 如果WebSocket未连接，只会注册回调函数
-            - 不同市场类型使用不同的事件类型
-        """
-        self.logger.info(f"开始订阅{symbol}的成交数据...")
-        super().subscribe_trades(symbol, callback)
-        if self._ws_manager.is_connected:
-            asyncio.create_task(self._send_trade_subscription(symbol))
-
     def _merge_orderbook_update_to_snapshot(self, symbol: str, data: dict) -> None:
         """
         将增量订单簿数据合并到本地快照
