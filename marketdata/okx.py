@@ -272,16 +272,53 @@ class OkxMarketData(MarketDataBase):
         """
         # 创建订单簿对象
         orderbook = self._create_orderbook_from_data(data)
-
-        # 保存快照
-        self._orderbook_snapshot_cache[orderbook.symbol] = orderbook
-        self.logger.info(f"保存{orderbook.symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
+        self.logger.info(f"{orderbook.symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
 
         # 通知订阅者
         await self._notify_orderbook(orderbook)
 
     async def _handle_trade(self, data: dict) -> None:
-        pass
+        """
+        处理OKX成交信息
+
+        处理流程：
+        1. 转换交易对符号
+        2. 创建成交对象
+        3. 通知订阅者
+
+        Args:
+            data: 成交数据，包含：
+                - arg: 包含channel和instId
+                - data: 成交数据数组，每个元素包含：
+                    - instId: 交易对
+                    - tradeId: 成交ID
+                    - px: 成交价格
+                    - sz: 成交数量
+                    - side: 成交方向（buy/sell）
+                    - ts: 成交时间戳
+                    - count: 成交次数
+        """
+        # 获取交易对符号
+        exchange_symbol = data['arg']['instId']
+        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+        
+        # 获取成交数据
+        trade_data = data['data'][0]
+        
+        # 创建成交对象
+        trade = Trade(
+            symbol=system_symbol,
+            price=Decimal(trade_data['px']),
+            quantity=Decimal(trade_data['sz']),
+            side=trade_data['side'],
+            timestamp=int(trade_data['ts']),
+            trade_id=trade_data['tradeId']
+        )
+        
+        self.logger.debug(f"处理{system_symbol}的成交消息，价格: {trade.price}, 数量: {trade.quantity}, 方向: {trade.side}")
+        
+        # 通知订阅者
+        await self._notify_trade(trade)
 
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
         """
