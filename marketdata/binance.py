@@ -90,49 +90,10 @@ class BinanceMarketData(MarketDataBase):
 
         # 设置REST API地址
         self._rest_url: str = config.REST_URLS[market_type]
-        # HTTP会话对象，用于REST API请求
-        self._session: Optional[aiohttp.ClientSession] = None
         # WebSocket请求ID计数器
         self._next_request_id: int = 1
         # 存储订阅请求内容，用于重连时重新订阅
         self._subscription_requests: Dict[int, Dict[str, Any]] = {}
-
-    async def connect(self) -> None:
-        """
-        建立WebSocket和REST连接，并启动消息处理循环
-
-        连接过程：
-        1. 创建HTTP会话
-        2. 建立WebSocket连接
-        3. 设置运行状态
-        4. 记录连接日志
-        """
-        self.logger.info("开始建立市场数据连接...")
-        self._session = aiohttp.ClientSession()
-
-        await self._ws_manager.connect()
-
-        self._running = True
-        self.logger.info("市场数据连接建立完成")
-
-    async def disconnect(self) -> None:
-        """
-        断开WebSocket和REST连接，停止消息处理
-
-        断开过程：
-        1. 设置停止标志
-        2. 断开WebSocket连接
-        3. 关闭HTTP会话
-        4. 清理资源
-        5. 记录断开日志
-        """
-        self.logger.info("开始断开市场数据连接...")
-        self._running = False
-        await self._ws_manager.disconnect()
-        if self._session:
-            await self._session.close()
-            self._session = None
-        self.logger.info("市场数据连接已断开")
 
     async def _handle_messages(self, data: dict) -> None:
         """

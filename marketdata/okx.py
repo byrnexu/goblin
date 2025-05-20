@@ -84,38 +84,6 @@ class OkxMarketData(MarketDataBase):
         super().__init__(config, market_type)
         self.logger.info(f"初始化OKX市场数据服务 market {market_type.value} ...")
 
-    async def connect(self) -> None:
-        """
-        建立WebSocket和REST连接，并启动消息处理循环
-
-        连接过程：
-        1. 创建HTTP会话
-        2. 建立WebSocket连接
-        3. 设置运行状态
-        4. 记录连接日志
-        """
-        self.logger.info("开始建立市场数据连接...")
-        await self._ws_manager.connect()
-
-        self._running = True
-        self.logger.info("市场数据连接建立完成")
-
-    async def disconnect(self) -> None:
-        """
-        断开WebSocket和REST连接，停止消息处理
-
-        断开过程：
-        1. 设置停止标志
-        2. 断开WebSocket连接
-        3. 关闭HTTP会话
-        4. 清理资源
-        5. 记录断开日志
-        """
-        self.logger.info("开始断开市场数据连接...")
-        self._running = False
-        await self._ws_manager.disconnect()
-        self.logger.info("市场数据连接已断开")
-
     async def _handle_messages(self, data: dict) -> None:
         """
         WebSocket消息主循环，处理深度和成交推送，自动重连

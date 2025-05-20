@@ -18,6 +18,7 @@ from util.logger import get_logger
 from util.websocket_manager import WebSocketManager, MessageHandler, ReconnectConfig, ConnectionConfig
 from .event_manager import EventManager
 from .types import OrderBook, OrderBookLevel, Trade, Market, MarketType
+import aiohttp
 
 @dataclass
 class OrderBookLevel:
@@ -107,6 +108,8 @@ class MarketDataBase(ABC):
         self._orderbook_snapshot_cache: Dict[str, OrderBook] = {}
         # 运行状态标志
         self._running: bool = False
+        # HTTP会话对象，用于REST API请求
+        self._session: Optional[aiohttp.ClientSession] = None
 
     def get_ws_url(self) -> str:
         """获取WebSocket URL
@@ -138,23 +141,52 @@ class MarketDataBase(ABC):
         """
         pass
 
-    @abstractmethod
     async def connect(self) -> None:
         """连接到交易所
 
-        建立与交易所的连接，包括WebSocket连接等
-        具体的实现类需要实现这个方法
-        """
-        pass
+        建立与交易所的连接，包括WebSocket连接等。
+        默认实现会：
+        1. 如果配置中包含REST_URLS，创建HTTP会话
+        2. 建立WebSocket连接
+        3. 设置运行状态
+        4. 记录连接日志
 
-    @abstractmethod
+        子类可以重写此方法以添加额外的连接逻辑。
+        """
+        self.logger.info("开始建立市场数据连接...")
+        
+        # 如果配置中包含REST_URLS，创建HTTP会话
+        if hasattr(self._config, 'REST_URLS'):
+            self._session = aiohttp.ClientSession()
+            self.logger.info("已创建HTTP会话")
+            
+        await self._ws_manager.connect()
+        self._running = True
+        self.logger.info("市场数据连接建立完成")
+
     async def disconnect(self) -> None:
         """断开与交易所的连接
 
-        关闭所有连接，释放资源
-        具体的实现类需要实现这个方法
+        关闭所有连接，释放资源。
+        默认实现会：
+        1. 设置停止标志
+        2. 断开WebSocket连接
+        3. 如果存在HTTP会话，关闭它
+        4. 记录断开日志
+
+        子类可以重写此方法以添加额外的断开连接逻辑。
         """
-        pass
+        self.logger.info("开始断开市场数据连接...")
+        self._running = False
+        await self._ws_manager.disconnect()
+        
+        # 如果存在HTTP会话，关闭它
+        if self._session:
+            await self._session.close()
+            self._session = None
+            self.logger.info("已关闭HTTP会话")
+            
+        self.logger.info("市场数据连接已断开")
 
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
         """订阅订单簿数据
