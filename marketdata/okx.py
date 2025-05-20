@@ -291,15 +291,18 @@ class OkxMarketData(MarketDataBase):
         # 通知订阅者
         await self._notify_trade(trade)
 
-    async def _send_orderbook_subscription(self, symbol: str) -> None:
+    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
-        发送订单簿订阅请求
-
+        构建订单簿订阅消息
+        
         Args:
             symbol: 交易对符号
+            
+        Returns:
+            dict: 订阅消息内容
         """
         exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-        subscribe_msg = {
+        return {
             "op": "subscribe",
             "args": [{
                 "channel": self.CHANNEL_MAPPING.get(
@@ -309,26 +312,25 @@ class OkxMarketData(MarketDataBase):
                 "instId": exchange_symbol
             }]
         }
-        self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
-        await self._ws_manager.send_message(subscribe_msg)
 
-    async def _send_trade_subscription(self, symbol: str) -> None:
+    def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
-        发送成交订阅请求
-
+        构建成交订阅消息
+        
         Args:
             symbol: 交易对符号
+            
+        Returns:
+            dict: 订阅消息内容
         """
         exchange_symbol = to_exchange(symbol, self._symbol_adapter())
-        subscribe_msg = {
+        return {
             "op": "subscribe",
             "args": [{
                 "channel": "trades",
                 "instId": exchange_symbol
             }]
         }
-        self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
-        await self._ws_manager.send_message(subscribe_msg)
 
     def _handle_subscription_event(self, data: dict) -> None:
         """

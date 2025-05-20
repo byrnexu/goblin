@@ -168,24 +168,60 @@ class MarketDataBase(ABC):
         self.logger.info("市场数据连接已断开")
 
     @abstractmethod
-    async def _send_orderbook_subscription(self, symbol: str) -> None:
+    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
-        发送订单簿订阅请求
-
+        构建订单簿订阅消息
+        
         Args:
             symbol: 交易对符号
+            
+        Returns:
+            dict: 订阅消息内容
         """
         pass
 
     @abstractmethod
-    async def _send_trade_subscription(self, symbol: str) -> None:
+    def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
-        发送成交订阅请求
+        构建成交订阅消息
+        
+        Args:
+            symbol: 交易对符号
+            
+        Returns:
+            dict: 订阅消息内容
+        """
+        pass
 
+    async def _send_subscription_message(self, subscribe_msg: dict) -> None:
+        """
+        发送订阅消息到WebSocket
+        
+        Args:
+            subscribe_msg: 订阅消息内容
+        """
+        self.logger.info(f"发送订阅请求: {subscribe_msg}")
+        await self._ws_manager.send_message(subscribe_msg)
+
+    async def _send_orderbook_subscription(self, symbol: str) -> None:
+        """
+        发送订单簿订阅请求
+        
         Args:
             symbol: 交易对符号
         """
-        pass
+        subscribe_msg = self._build_orderbook_subscription_message(symbol)
+        await self._send_subscription_message(subscribe_msg)
+
+    async def _send_trade_subscription(self, symbol: str) -> None:
+        """
+        发送成交订阅请求
+        
+        Args:
+            symbol: 交易对符号
+        """
+        subscribe_msg = self._build_trade_subscription_message(symbol)
+        await self._send_subscription_message(subscribe_msg)
 
     def subscribe_orderbook(self, symbol: str, callback: Callable[[OrderBook], Union[None, Awaitable[None]]]) -> None:
         """

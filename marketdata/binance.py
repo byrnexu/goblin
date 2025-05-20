@@ -95,12 +95,15 @@ class BinanceMarketData(MarketDataBase):
         # 存储订阅请求内容，用于打印订阅结果
         self._subscription_requests: Dict[int, Dict[str, Any]] = {}
 
-    async def _send_orderbook_subscription(self, symbol: str) -> None:
+    def _build_orderbook_subscription_message(self, symbol: str) -> dict:
         """
-        发送订单簿订阅请求
+        构建订单簿订阅消息
 
         Args:
             symbol: 交易对符号
+
+        Returns:
+            dict: 订阅消息内容
         """
         exchange_symbol = to_exchange(symbol, self._symbol_adapter())
         subscribe_msg = {
@@ -108,17 +111,18 @@ class BinanceMarketData(MarketDataBase):
             "params": [f"{exchange_symbol.lower()}@depth@{self._orderbook_update_interval}"],
             "id": self._next_request_id
         }
-        self._subscription_requests[self._next_request_id] = subscribe_msg
         self._next_request_id += 1
-        self.logger.info(f"发送订单簿订阅请求: {subscribe_msg}")
-        await self._ws_manager.send_message(subscribe_msg)
+        return subscribe_msg
 
-    async def _send_trade_subscription(self, symbol: str) -> None:
+    def _build_trade_subscription_message(self, symbol: str) -> dict:
         """
-        发送成交订阅请求
+        构建成交订阅消息
 
         Args:
             symbol: 交易对符号
+
+        Returns:
+            dict: 订阅消息内容
         """
         exchange_symbol = to_exchange(symbol, self._symbol_adapter())
         subscribe_msg = {
@@ -126,10 +130,9 @@ class BinanceMarketData(MarketDataBase):
             "params": [f"{exchange_symbol.lower()}@{'trade' if self._market_type == MarketType.SPOT else 'aggTrade'}"],
             "id": self._next_request_id
         }
-        self._subscription_requests[self._next_request_id] = subscribe_msg
         self._next_request_id += 1
-        self.logger.info(f"发送成交订阅请求: {subscribe_msg}")
-        await self._ws_manager.send_message(subscribe_msg)
+        return subscribe_msg
+
 
     async def _handle_messages(self, data: dict) -> None:
         """
