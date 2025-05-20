@@ -79,22 +79,10 @@ class MarketDataBase(ABC):
         self.logger = get_logger(f"{self.__class__.__name__}")
         
         # 创建WebSocket管理器
-        reconnect_config = ReconnectConfig(
-            max_retries=5,
-            initial_interval=1.0,
-            max_interval=30.0,
-            backoff_factor=2.0
-        )
-        connection_config = ConnectionConfig(
-            timeout=30.0,
-            ping_interval=20.0,
-            ping_timeout=10.0,
-            close_timeout=10.0
-        )
         self._ws_manager: WebSocketManager = WebSocketManager(
             self.get_ws_url(),
-            reconnect_config=reconnect_config,
-            connection_config=connection_config,
+            reconnect_config=self._config.WS_RECONNECT_CONFIG,
+            connection_config=self._config.WS_CONNECTION_CONFIG,
             logger=self.logger
         )
         

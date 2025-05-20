@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from .types import MarketType, Market
+from util.websocket_manager import ReconnectConfig, ConnectionConfig
 
 class BaseConfig:
     """所有交易所通用的基础配置，可扩展"""
@@ -27,6 +28,19 @@ class BinanceConfig(BaseConfig):
         MarketType.PERP_USDT: "500ms", # 100ms 250ms 500ms
         MarketType.PERP_COIN: "500ms"  # 100ms 250ms 500ms
     }
+    # WebSocket连接配置
+    WS_RECONNECT_CONFIG = ReconnectConfig(
+        max_retries=5,
+        initial_interval=1.0,
+        max_interval=30.0,
+        backoff_factor=2.0
+    )
+    WS_CONNECTION_CONFIG = ConnectionConfig(
+        timeout=30.0,
+        ping_interval=20.0,
+        ping_timeout=10.0,
+        close_timeout=10.0
+    )
 
 class OkxConfig(BaseConfig):
     MARKET: Market = Market.OKX
@@ -45,3 +59,16 @@ class OkxConfig(BaseConfig):
         MarketType.PERP_USDT: 5, # 1 5 400
         MarketType.PERP_COIN: 400  # 1 5 400
     }
+    # WebSocket连接配置
+    WS_RECONNECT_CONFIG = ReconnectConfig(
+        max_retries=5,
+        initial_interval=1.0,
+        max_interval=30.0,
+        backoff_factor=2.0
+    )
+    WS_CONNECTION_CONFIG = ConnectionConfig(
+        timeout=30.0,
+        ping_interval=20.0,
+        ping_timeout=10.0,
+        close_timeout=10.0
+    )
