@@ -140,22 +140,145 @@ class OkxMarketData(MarketDataBase):
             self.logger.info(f"收到成交消息: {data['arg']['instId']}")
             await self._handle_trade(data)
 
-    async def _handle_orderbook_update(self, data: dict) -> None:
-        # TODO: Implement OKX orderbook update handling
-        pass
-
-    async def _handle_orderbook_snapshot(self, data: dict) -> None:
-        """处理订单簿快照消息
-
-        处理OKX WebSocket的订单簿更新消息，包括：
-        1. 维护订单簿状态
-        2. 通知订阅者
+    def _create_orderbook_from_data(self, data: dict) -> OrderBook:
+        """
+        根据OKX订单簿数据创建OrderBook对象
 
         Args:
-            data: 订单簿快照数据，包含买单和卖单的完整
+            data: 订单簿数据，包含：
+                - asks: 卖单数组
+                - bids: 买单数组
+                - ts: 时间戳
+                - checksum: 校验和
+                - prevSeqId: 前一个序号
+                - seqId: 当前序号
+
+        Returns:
+            OrderBook: 创建的订单簿对象
         """
-        # TODO: Implement OKX orderbook snapshot handling
-        pass
+        # 获取交易对符号
+        exchange_symbol = data['arg']['instId']
+        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+
+        # 获取订单簿数据
+        orderbook_data = data['data'][0]
+
+        # 创建新的OrderBook对象
+        orderbook = OrderBook(
+            symbol=system_symbol,
+            bids=SortedDict(lambda x: -x),  # 买单按价格降序
+            asks=SortedDict(),  # 卖单按价格升序
+            timestamp=int(orderbook_data['ts']),
+            aux_data={
+                'seqId': orderbook_data['seqId']
+            }
+        )
+
+        # 处理买单
+        for bid in orderbook_data['bids']:
+            price = Decimal(bid[0])
+            quantity = Decimal(bid[1])
+            if quantity > 0:  # 只添加数量大于0的档位
+                orderbook.bids[price] = OrderBookLevel(price, quantity)
+
+        # 处理卖单
+        for ask in orderbook_data['asks']:
+            price = Decimal(ask[0])
+            quantity = Decimal(ask[1])
+            if quantity > 0:  # 只添加数量大于0的档位
+                orderbook.asks[price] = OrderBookLevel(price, quantity)
+
+        return orderbook
+
+    def _merge_orderbook_update(self, existing_orderbook: OrderBook, update_orderbook: OrderBook) -> None:
+        """
+        将增量订单簿更新合并到现有订单簿
+
+        Args:
+            existing_orderbook: 现有的订单簿对象
+            update_orderbook: 增量更新的订单簿对象
+        """
+        # 更新买单
+        for price, level in update_orderbook.bids.items():
+            if level.quantity > 0:
+                existing_orderbook.bids[price] = level
+            else:
+                existing_orderbook.bids.pop(price, None)
+
+        # 更新卖单
+        for price, level in update_orderbook.asks.items():
+            if level.quantity > 0:
+                existing_orderbook.asks[price] = level
+            else:
+                existing_orderbook.asks.pop(price, None)
+
+        # 更新时间戳和序号信息
+        existing_orderbook.timestamp = update_orderbook.timestamp
+        existing_orderbook.aux_data.update(update_orderbook.aux_data)
+
+    async def _handle_orderbook_update(self, data: dict) -> None:
+        """
+        处理OKX订单簿更新消息
+
+        处理流程：
+        1. 转换交易对符号
+        2. 根据action类型处理：
+           - snapshot: 直接保存为快照
+           - update: 从缓存获取快照并合并更新
+        3. 通知订阅者
+
+        Args:
+            data: 订单簿数据，包含：
+                - arg: 包含channel和instId
+                - action: 'snapshot'或'update'
+                - data: 订单簿数据数组
+        """
+        # 获取交易对符号
+        exchange_symbol = data['arg']['instId']
+        system_symbol = from_exchange(exchange_symbol, self._symbol_adapter())
+        self.logger.debug(f"处理{system_symbol}的订单簿更新，action: {data['action']}")
+
+        # 创建订单簿对象
+        orderbook = self._create_orderbook_from_data(data)
+
+        if data['action'] == 'snapshot':
+            # 如果是快照，直接保存
+            self._orderbook_snapshot_cache[system_symbol] = orderbook
+            self.logger.info(f"保存{system_symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
+        else:  # update
+            # 如果是增量更新，需要合并到现有快照
+            if system_symbol not in self._orderbook_snapshot_cache:
+                self.logger.warning(f"收到{system_symbol}的增量更新但没有快照，将其作为快照保存")
+                self._orderbook_snapshot_cache[system_symbol] = orderbook
+            else:
+                # 合并更新到现有快照
+                self._merge_orderbook_update(self._orderbook_snapshot_cache[system_symbol], orderbook)
+                self.logger.debug(f"合并后{system_symbol}买盘档数: {len(self._orderbook_snapshot_cache[system_symbol].bids)}, 卖盘档数: {len(self._orderbook_snapshot_cache[system_symbol].asks)}")
+
+        # 通知订阅者
+        await self._notify_orderbook(self._orderbook_snapshot_cache[system_symbol])
+
+    async def _handle_orderbook_snapshot(self, data: dict) -> None:
+        """
+        处理订单簿快照消息
+
+        处理OKX WebSocket的订单簿快照消息，包括：
+        1. 创建订单簿对象
+        2. 保存为快照
+        3. 通知订阅者
+
+        Args:
+            data: 订单簿快照数据
+        """
+        # 创建订单簿对象
+        orderbook = self._create_orderbook_from_data(data)
+
+        # 保存快照
+        self._orderbook_snapshot_cache[orderbook.symbol] = orderbook
+        self.logger.info(f"保存{orderbook.symbol}的订单簿快照，买盘档数: {len(orderbook.bids)}, 卖盘档数: {len(orderbook.asks)}")
+
+        # 通知订阅者
+        await self._notify_orderbook(orderbook)
 
     async def _handle_trade(self, data: dict) -> None:
         pass
