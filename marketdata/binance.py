@@ -214,20 +214,20 @@ class BinanceMarketData(MarketDataBase):
                 - m: 是否是买方发起的成交
         """
         system_symbol = await from_exchange(data['s'], self._symbol_adapter())
-        self.logger.debug(f"处理{system_symbol}的成交消息...")
+        trade_id = str(data['t'] if self._market_type == MarketType.SPOT else data['a'])
+        self.logger.debug(f"处理{system_symbol}的成交消息，成交ID: {trade_id}")
 
         # 创建成交对象
         trade = Trade(
             symbol=system_symbol,
-            price=Decimal(str(data['p'])),
-            quantity=Decimal(str(data['q'])),
-            side='sell' if data.get('m', False) else 'buy',  # m=True 表示买方是挂单方，即卖方成交
-            timestamp=data['T'],
-            trade_id=str(data.get('t', data.get('a', '')))  # 现货用t，合约用a
+            price=Decimal(data['p']),
+            quantity=Decimal(data['q']),
+            side='sell' if data['m'] else 'buy',
+            timestamp=data['E'],
+            trade_id=trade_id
         )
-
-        # 通知订阅者
         await self._notify_trade(trade)
+        self.logger.debug(f"已处理{system_symbol}的成交消息，价格: {trade.price}, 数量: {trade.quantity}, 方向: {trade.side}")
 
     def _u_is_less_than_last_update_id(self, symbol: str, data: dict) -> bool:
         """
